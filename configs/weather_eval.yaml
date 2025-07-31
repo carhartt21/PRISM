@@ -1,0 +1,16 @@
+# Weather Image Translation Evaluation Configuration
+generated: ./generated_weather
+real: ./real_weather
+metrics: [fid, ssim, lpips, psnr]
+batch_size: 64
+device: auto     # cpu, cuda, auto
+
+# Weather-specific categories for analysis
+weather_categories: [fog, rain, snow, night, clear, cloudy]
+
+# Output settings
+output: weather_results.json
+verbose: 1
+
+# Image processing settings
+image_size: [299, 299]  # Height, width

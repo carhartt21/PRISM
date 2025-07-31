@@ -1,0 +1,19 @@
+{
+  "generated": "./generated_images",
+  "real": "./reference_images",
+  "metrics": [
+    "fid",
+    "ssim",
+    "lpips",
+    "psnr",
+    "is"
+  ],
+  "batch_size": 32,
+  "device": "auto",
+  "output": "evaluation_results.json",
+  "verbose": 0,
+  "image_size": [
+    299,
+    299
+  ]
+}
