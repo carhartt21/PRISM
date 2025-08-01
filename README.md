@@ -372,7 +372,7 @@ If you use this evaluation pipeline in your research, please cite:
 ```bibtex
 @software{image_evaluation_pipeline,
   title={Comprehensive Image Evaluation Pipeline},
-  author={Your Name},
+  author={Christoph Gerhardt},
   year={2025},
   url={https://github.com/your-repo/image-evaluation-pipeline}
 }
