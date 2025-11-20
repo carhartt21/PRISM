@@ -9,6 +9,7 @@ from PIL import Image
 import numpy as np
 
 from utils.image_io import load_and_pair_images, find_image_files, match_by_filename
+from semantic_consistency import get_image_pairs
 
 
 def create_dummy_image(path: Path, size: tuple = (64, 64)):
@@ -113,6 +114,29 @@ class TestImagePairing:
         gen_tensor, real_tensor, _ = pairs[0]
         assert gen_tensor.shape == (3, 128, 128)
         assert real_tensor.shape == (3, 128, 128)
+
+    def test_get_image_pairs_with_suffix_stripping(self, tmp_path):
+        """Ensure suffix stripping allows pairing mismatched filenames."""
+        source_dir = tmp_path / "source"
+        translated_dir = tmp_path / "translated"
+        source_dir.mkdir()
+        translated_dir.mkdir()
+
+        source_name = "GOPR0475_frame_000247_rgb_ref_anon.png"
+        translated_name = "GOPR0475_frame_000247_rgb.png"
+
+        create_dummy_image(source_dir / source_name)
+        create_dummy_image(translated_dir / translated_name)
+
+        pairs = get_image_pairs(
+            source_dir,
+            translated_dir,
+            strip_suffixes=("_ref_anon",)
+        )
+
+        assert len(pairs) == 1
+        assert pairs[0][0].name == source_name
+        assert pairs[0][1].name == translated_name
 
 
 if __name__ == "__main__":
