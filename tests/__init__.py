@@ -1,3 +1,3 @@
 """
-Tests for image evaluation pipeline
+Tests for PRISM (Pipeline for Robust Image Similarity Metrics)
 """

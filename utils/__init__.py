@@ -1,5 +1,5 @@
 """
-utils: Utility modules for image evaluation pipeline
+Utilities for PRISM (Pipeline for Robust Image Similarity Metrics)
 """
 
 from .image_io import load_and_pair_images, load_image

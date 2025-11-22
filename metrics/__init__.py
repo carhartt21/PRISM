@@ -15,7 +15,7 @@ __all__ = ["registry"]
 
 class _Registry(dict):
     def register(self, modname: str) -> None:
-        module = import_module(f"metrics.{modname}")
+        module = import_module(f"{__name__}.{modname}")
         self[module.Metric.name] = module.Metric
 
     def build(self, names: List[str], **kwargs):
