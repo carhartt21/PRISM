@@ -1,4 +1,4 @@
-# Makefile for Image Evaluation Pipeline
+# Makefile for PRISM (Pipeline for Robust Image Similarity Metrics)
 
 .PHONY: install test clean lint format help
 
