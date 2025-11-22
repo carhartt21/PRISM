@@ -1,5 +1,5 @@
 """
-Setup script for Image Evaluation Pipeline
+Setup script for PRISM (Pipeline for Robust Image Similarity Metrics)
 """
 from setuptools import setup, find_packages
 
@@ -14,7 +14,7 @@ setup(
     version="1.0.0",
     author="Research Team",
     author_email="research@example.com",
-    description="Comprehensive Python evaluation pipeline for image generation models",
+    description="PRISM: Pipeline for Robust Image Similarity Metrics",
     long_description=long_description,
     long_description_content_type="text/markdown",
     url="https://github.com/your-org/image-evaluation-pipeline",
