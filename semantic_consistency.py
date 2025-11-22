@@ -129,39 +129,41 @@ class SegFormerEvaluator:
         print(f"Model loaded with {self.num_classes} classes!\n")
     
     def segment_image(self, image_path: Path) -> np.ndarray:
-        """
-        Perform semantic segmentation on a single image.
-        
-        Args:
-            image_path: Path to input image
-            
-        Returns:
-            Segmentation mask as numpy array (H, W) with class indices
-        """
-        # Load image
-        image = Image.open(image_path).convert('RGB')
-        original_size = image.size  # (W, H)
-        
-        # Preprocess
-        inputs = self.processor(images=image, return_tensors="pt")
+        """Perform segmentation for a single image path."""
+        return self.segment_images([image_path])[0]
+
+    def segment_images(self, image_paths: List[Path]) -> List[np.ndarray]:
+        """Batch-segment multiple images to amortize preprocessing and inference."""
+        if not image_paths:
+            return []
+
+        images: List[Image.Image] = []
+        original_sizes: List[Tuple[int, int]] = []
+        for path in image_paths:
+            image = Image.open(path).convert('RGB')
+            images.append(image)
+            original_sizes.append(image.size)  # (W, H)
+
+        inputs = self.processor(images=images, return_tensors="pt")
         inputs = {k: v.to(self.device) for k, v in inputs.items()}
-        
-        # Perform inference
+
+        predictions: List[np.ndarray] = []
         with torch.no_grad():
             outputs = self.model(**inputs)
             logits = outputs.logits
-            
-            # Upsample to original size and get predictions
-            upsampled_logits = torch.nn.functional.interpolate(
-                logits,
-                size=(original_size[1], original_size[0]),  # (H, W)
-                mode='bilinear',
-                align_corners=False
-            )
-            
-            predictions = upsampled_logits.argmax(dim=1).squeeze(0)
-        
-        return predictions.cpu().numpy()
+
+            for idx, (width, height) in enumerate(original_sizes):
+                sample_logits = logits[idx:idx + 1]
+                upsampled_logits = torch.nn.functional.interpolate(
+                    sample_logits,
+                    size=(height, width),  # (H, W)
+                    mode='bilinear',
+                    align_corners=False
+                )
+                prediction = upsampled_logits.argmax(dim=1).squeeze(0)
+                predictions.append(prediction.cpu().numpy())
+
+        return predictions
     
     @staticmethod
     def compute_pixel_accuracy(mask1: np.ndarray, mask2: np.ndarray) -> float:
@@ -207,7 +209,80 @@ class SegFormerEvaluator:
             'mIoU': miou,
             'class_IoUs': class_ious
         }
-    
+        
+    @staticmethod
+    def compute_frequency_weighted_iou(
+        mask1: np.ndarray,
+        mask2: np.ndarray,
+        num_classes: int,
+        class_names: Optional[List[str]] = None
+    ) -> Dict[str, Any]:
+        """
+        Compute frequency-weighted IoU, accounting for class imbalance.
+        
+        Args:
+            mask1: First segmentation mask (H, W)
+            mask2: Second segmentation mask (H, W)
+            num_classes: Number of semantic classes
+            class_names: Optional list of class labels for reporting
+            
+        Returns:
+            Dictionary with fw-IoU, mIoU, and class frequencies (values may be nested)
+        """
+
+        assert mask1.shape == mask2.shape, "Masks must have the same shape"
+        
+        class_ious = []
+        class_frequencies = []
+        class_iou_dict = {}
+        
+        total_pixels = mask1.size
+        
+        for cls in range(num_classes):
+            # Get binary masks for current class
+            mask1_cls = (mask1 == cls)
+            mask2_cls = (mask2 == cls)
+            
+            # Compute intersection and union
+            intersection = np.logical_and(mask1_cls, mask2_cls).sum()
+            union = np.logical_or(mask1_cls, mask2_cls).sum()
+            
+            # Frequency of class in ground truth (mask1)
+            frequency = mask1_cls.sum() / total_pixels
+            
+            # Compute IoU (skip if class not present in either mask)
+            if union > 0:
+                iou = intersection / union
+                class_ious.append(iou)
+                class_frequencies.append(frequency)
+                label = (
+                    class_names[cls]
+                    if class_names and cls < len(class_names)
+                    else f'class_{cls}'
+                )
+                class_iou_dict[label] = {
+                    'IoU': float(iou),
+                    'frequency': float(frequency)
+                }
+        
+        # Compute metrics
+        miou = float(np.mean(class_ious)) if class_ious else 0.0
+        
+        # Frequency-weighted IoU
+        if class_frequencies:
+            fw_iou = float(
+                np.sum(np.array(class_frequencies) * np.array(class_ious)) / np.sum(class_frequencies)
+            )
+        else:
+            fw_iou = 0.0
+        
+        return {
+            'mIoU': miou * 100.0,
+            'fw_IoU': fw_iou * 100.0,
+            'class_details': class_iou_dict
+        }
+
+        
     def evaluate_pair(
         self,
         source_path: Path,
@@ -226,11 +301,19 @@ class SegFormerEvaluator:
             self.num_classes,
             self.class_names
         )
+        weighted_iou_metrics = self.compute_frequency_weighted_iou(
+            source_mask,
+            translated_mask,
+            self.num_classes,
+            self.class_names
+        )
         
         return {
             'pixel_accuracy': pixel_acc,
             'mIoU': iou_metrics['mIoU'] * 100.0,
-            'class_IoUs': iou_metrics['class_IoUs']
+            'class_IoUs': iou_metrics['class_IoUs'],
+            'fw_IoU': weighted_iou_metrics['fw_IoU'],
+            'class_details': weighted_iou_metrics['class_details']
         }
 
 class DeepLabV3Evaluator:
@@ -636,27 +719,45 @@ def aggregate_results(all_results: List[Dict[str, Any]]) -> Dict[str, Any]:
     if not all_results:
         return {}
     
-    # Aggregate pixel accuracy and mIoU
+    # Aggregate pixel accuracy, mIoU, and fw-IoU
     avg_pixel_acc = np.mean([r['pixel_accuracy'] for r in all_results])
     avg_miou = np.mean([r['mIoU'] for r in all_results])
+    fw_ious = [r['fw_IoU'] for r in all_results if 'fw_IoU' in r]
+    avg_fw_iou = np.mean(fw_ious) if fw_ious else 0.0
     
     # Aggregate class-wise IoU (average across pairs where class appears)
     all_class_ious = {}
+    fw_class_details: Dict[str, Dict[str, List[float]]] = {}
     for result in all_results:
         for cls, iou in result['class_IoUs'].items():
             if cls not in all_class_ious:
                 all_class_ious[cls] = []
             all_class_ious[cls].append(iou)
+        for cls, stats in result.get('class_details', {}).items():
+            entry = fw_class_details.setdefault(cls, {'IoU': [], 'frequency': []})
+            entry['IoU'].append(stats.get('IoU', 0.0))
+            entry['frequency'].append(stats.get('frequency', 0.0))
     
     avg_class_ious = {
         cls: np.mean(ious) * 100.0  # Convert to percentage
         for cls, ious in all_class_ious.items()
     }
+
+    avg_fw_class_details = {
+        cls: {
+            'average_IoU': np.mean(details['IoU']) * 100.0,
+            'average_frequency': np.mean(details['frequency']) * 100.0
+        }
+        for cls, details in fw_class_details.items()
+        if details['IoU']
+    }
     
     return {
         'average_pixel_accuracy': avg_pixel_acc,
         'average_mIoU': avg_miou,
+        'average_fw_IoU': avg_fw_iou,
         'average_class_IoUs': avg_class_ious,
+        'average_fw_class_details': avg_fw_class_details,
         'num_pairs_evaluated': len(all_results)
     }
 
@@ -715,11 +816,19 @@ def print_results(
     print(f"\nNumber of image pairs evaluated: {results['num_pairs_evaluated']}")
     print(f"\nAverage Pixel Accuracy: {results['average_pixel_accuracy']:.2f}%")
     print(f"Average mIoU: {results['average_mIoU']:.2f}%")
+    if 'average_fw_IoU' in results:
+        print(f"Average Frequency-Weighted IoU: {results['average_fw_IoU']:.2f}%")
     
     if results.get('average_class_IoUs'):
         print("\nClass-wise IoU (%):")
         for cls, iou in sorted(results['average_class_IoUs'].items()):
             print(f"  {cls}: {iou:.2f}%")
+    if results.get('average_fw_class_details'):
+        print("\nFrequency-weighted class details (%):")
+        for cls, stats in sorted(results['average_fw_class_details'].items()):
+            avg_iou = stats.get('average_IoU', 0.0)
+            avg_freq = stats.get('average_frequency', 0.0)
+            print(f"  {cls}: IoU {avg_iou:.2f}%, freq {avg_freq:.2f}%")
     
     print("="*60 + "\n")
 
@@ -928,17 +1037,33 @@ def main():
     for source_path, translated_path in tqdm(image_pairs, desc="Processing"):
         try:
             cache_file = build_output_path(source_cache_dir, source_dir, source_path, '.npy')
-            source_mask: np.ndarray
+            source_mask: Optional[np.ndarray] = None
+            translated_mask: Optional[np.ndarray] = None
+
+            pending: List[Tuple[str, Path]] = []
+
             if cache_file and args.reuse_cached_source and cache_file.exists():
                 source_mask = np.load(cache_file, allow_pickle=False)
                 cache_hits += 1
             else:
-                source_mask = evaluator.segment_image(source_path)
-                if cache_file:
-                    cache_file.parent.mkdir(parents=True, exist_ok=True)
-                    np.save(cache_file, source_mask.astype(np.uint8))
-                    cache_writes += 1
-            translated_mask = evaluator.segment_image(translated_path)
+                pending.append(('source', source_path))
+
+            pending.append(('translated', translated_path))
+
+            if pending:
+                computed_masks = evaluator.segment_images([path for _, path in pending])
+                for (label, path), mask in zip(pending, computed_masks):
+                    if label == 'source':
+                        source_mask = mask
+                        if cache_file:
+                            cache_file.parent.mkdir(parents=True, exist_ok=True)
+                            np.save(cache_file, source_mask.astype(np.uint8))
+                            cache_writes += 1
+                    else:
+                        translated_mask = mask
+
+            if source_mask is None or translated_mask is None:
+                raise RuntimeError("Failed to generate both source and translated masks.")
 
             save_mask_array(source_mask, seg_source_root, source_dir, source_path)
             save_mask_array(translated_mask, seg_translated_root, translated_dir, translated_path)
@@ -946,11 +1071,19 @@ def main():
             save_color_preview(translated_mask, color_translated_root, translated_dir, translated_path)
 
             pixel_acc = evaluator.compute_pixel_accuracy(source_mask, translated_mask)
-            iou_metrics = evaluator.compute_iou(source_mask, translated_mask, evaluator.num_classes)
+            iou_metrics = evaluator.compute_iou(source_mask, translated_mask, evaluator.num_classes, evaluator.class_names)
+            weighted_iou_metrics = evaluator.compute_frequency_weighted_iou(
+                source_mask,
+                translated_mask,
+                evaluator.num_classes, 
+                evaluator.class_names
+            )
             result = {
                 'pixel_accuracy': pixel_acc,
                 'mIoU': iou_metrics['mIoU'] * 100.0,
                 'class_IoUs': iou_metrics['class_IoUs'],
+                'fw_IoU': weighted_iou_metrics['fw_IoU'],
+                'class_details': weighted_iou_metrics['class_details'],
                 'source_image': source_path.name,
                 'translated_image': translated_path.name
             }
