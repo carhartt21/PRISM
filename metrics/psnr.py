@@ -5,7 +5,8 @@ class Metric:
     name = "psnr"
 
     def __init__(self, device="cpu"):
-        self.metric = PeakSignalNoiseRatio().to(device)
+        # Inputs are normalized to [0, 1], so fix the valid data range.
+        self.metric = PeakSignalNoiseRatio(data_range=1.0).to(device)
         self.device = device
 
     def __call__(self, x: torch.Tensor, y: torch.Tensor) -> torch.Tensor:

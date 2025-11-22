@@ -94,7 +94,7 @@ def perform_normality_test(data: List[float]) -> Dict[str, Any]:
     if len(data) > 5000:
         # Use Anderson-Darling test for large samples
         result = stats.anderson(data, dist='norm')
-        is_normal = result.statistic < result.critical_values[2]  # 5% significance level
+        is_normal = bool(result.statistic < result.critical_values[2])  # 5% significance level
         return {
             "test_name": "Anderson-Darling",
             "statistic": float(result.statistic),
@@ -109,7 +109,7 @@ def perform_normality_test(data: List[float]) -> Dict[str, Any]:
             "test_name": "Shapiro-Wilk",
             "statistic": float(statistic),
             "p_value": float(p_value),
-            "is_normal": p_value > 0.05,
+            "is_normal": bool(p_value > 0.05),
             "alpha": 0.05
         }
 

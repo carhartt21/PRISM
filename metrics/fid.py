@@ -1,11 +1,20 @@
 import torch
-from torchmetrics.image.fid import FrechetInceptionDistance
+
 
 class Metric:
     name = "fid"
 
     def __init__(self, device="cpu"):
-        self.metric = FrechetInceptionDistance(feature=2048).to(device)
+        try:
+            from torchmetrics.image.fid import FrechetInceptionDistance
+        except ModuleNotFoundError as exc:  # pragma: no cover - import guard
+            raise ModuleNotFoundError(
+                "torchmetrics.image.fid requires the optional 'torch-fidelity' dependency."
+                " Install via 'pip install torchmetrics[image]' or 'pip install torch-fidelity'."
+            ) from exc
+
+        self.metric = FrechetInceptionDistance(feature=2048)
+        self.metric.to(device)
         self.device = device
 
     def __call__(self, x: torch.Tensor, y: torch.Tensor) -> torch.Tensor:
