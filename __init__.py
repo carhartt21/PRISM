@@ -2,7 +2,7 @@
 PRISM: Pipeline for Robust Image Similarity Metrics
 
 A comprehensive evaluation toolkit for comparing generated images against
-real images to assess the quality and realism of image-to-image translation
+original reference images to assess the quality and realism of image-to-image translation
 or weather synthesis models.
 """
 
