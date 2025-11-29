@@ -54,21 +54,21 @@ def find_image_files(directory: Path) -> List[Path]:
     return sorted(image_files)
 
 
-def match_by_filename(gen_files: List[Path], real_files: List[Path]) -> List[Tuple[Path, Path, str]]:
+def match_by_filename(gen_files: List[Path], original_files: List[Path]) -> List[Tuple[Path, Path, str]]:
     """
-    Match generated and real images by filename (ignoring extension).
+    Match generated and original images by filename (ignoring extension).
 
     Returns:
-        List of (gen_path, real_path, name) tuples
+        List of (gen_path, original_path, name) tuples
     """
-    real_dict = {f.stem: f for f in real_files}
+    original_dict = {f.stem: f for f in original_files}
     pairs = []
     unmatched_gen = []
 
     for gen_file in gen_files:
         stem = gen_file.stem
-        if stem in real_dict:
-            pairs.append((gen_file, real_dict[stem], stem))
+        if stem in original_dict:
+            pairs.append((gen_file, original_dict[stem], stem))
         else:
             unmatched_gen.append(gen_file)
 
@@ -79,9 +79,9 @@ def match_by_filename(gen_files: List[Path], real_files: List[Path]) -> List[Tup
         if len(unmatched_gen) > 5:
             logging.warning(f"  ... and {len(unmatched_gen) - 5} more")
 
-    unmatched_real = set(real_dict.keys()) - {stem for _, _, stem in pairs}
-    if unmatched_real:
-        logging.warning(f"Found {len(unmatched_real)} unmatched real images")
+    unmatched_original = set(original_dict.keys()) - {stem for _, _, stem in pairs}
+    if unmatched_original:
+        logging.warning(f"Found {len(unmatched_original)} unmatched original images")
 
     return pairs
 
@@ -90,24 +90,24 @@ def load_pairs_from_csv(manifest_path: Path) -> List[Tuple[Path, Path, str]]:
     """
     Load image pairs from CSV manifest.
 
-    CSV format: gen_path,real_path
+    CSV format: gen_path,original_path
     """
     pairs = []
     with open(manifest_path, 'r') as f:
         reader = csv.DictReader(f)
         for i, row in enumerate(reader):
             gen_path = Path(row['gen_path'])
-            real_path = Path(row['real_path'])
+            original_path = Path(row['original_path'])
             name = f"pair_{i:04d}"
 
             if not gen_path.exists():
                 logging.warning(f"Generated image not found: {gen_path}")
                 continue
-            if not real_path.exists():
-                logging.warning(f"Real image not found: {real_path}")
+            if not original_path.exists():
+                logging.warning(f"Original image not found: {original_path}")
                 continue
 
-            pairs.append((gen_path, real_path, name))
+            pairs.append((gen_path, original_path, name))
 
     return pairs
 
@@ -117,44 +117,44 @@ class LoadedImagePair:
     """Container for paired tensors plus their source paths."""
 
     gen_tensor: torch.Tensor
-    real_tensor: torch.Tensor
+    original_tensor: torch.Tensor
     name: str
     gen_path: Path
-    real_path: Path
+    original_path: Path
 
 
 def pair_image_paths(
     gen_dir: Path,
-    real_dir: Path,
+    original_dir: Path,
     strategy: str = "auto",
     manifest: Optional[Path] = None
 ) -> List[Tuple[Path, Path, str]]:
-    """Return matched generated/real image paths without loading pixels."""
+    """Return matched generated/original image paths without loading pixels."""
     if strategy == "csv":
         if not manifest:
             raise ValueError("Manifest file required for CSV pairing strategy")
         return load_pairs_from_csv(manifest)
 
     gen_files = find_image_files(gen_dir)
-    real_files = find_image_files(real_dir)
+    original_files = find_image_files(original_dir)
 
     if not gen_files:
         raise ValueError(f"No images found in generated directory: {gen_dir}")
-    if not real_files:
-        raise ValueError(f"No images found in real directory: {real_dir}")
+    if not original_files:
+        raise ValueError(f"No images found in original directory: {original_dir}")
 
-    return match_by_filename(gen_files, real_files)
+    return match_by_filename(gen_files, original_files)
 
 
 def load_and_pair_images_with_paths(
     gen_dir: Path,
-    real_dir: Path,
+    original_dir: Path,
     strategy: str = "auto",
     manifest: Optional[Path] = None,
     image_size: Tuple[int, int] = (299, 299)
 ) -> List[LoadedImagePair]:
     """Load paired images and keep track of their originating file paths."""
-    path_pairs = pair_image_paths(gen_dir, real_dir, strategy=strategy, manifest=manifest)
+    path_pairs = pair_image_paths(gen_dir, original_dir, strategy=strategy, manifest=manifest)
 
     if not path_pairs:
         return []
@@ -162,17 +162,17 @@ def load_and_pair_images_with_paths(
     tensor_pairs: List[LoadedImagePair] = []
     failed_loads = 0
 
-    for gen_path, real_path, name in path_pairs:
+    for gen_path, original_path, name in path_pairs:
         try:
             gen_tensor = load_image(gen_path, image_size)
-            real_tensor = load_image(real_path, image_size)
+            original_tensor = load_image(original_path, image_size)
             tensor_pairs.append(
                 LoadedImagePair(
                     gen_tensor=gen_tensor,
-                    real_tensor=real_tensor,
+                    original_tensor=original_tensor,
                     name=name,
                     gen_path=gen_path,
-                    real_path=real_path,
+                    original_path=original_path,
                 )
             )
         except Exception as e:
@@ -188,7 +188,7 @@ def load_and_pair_images_with_paths(
 
 def load_and_pair_images(
     gen_dir: Path,
-    real_dir: Path,
+    original_dir: Path,
     strategy: str = "auto",
     manifest: Optional[Path] = None,
     warn_unpaired: bool = True,
@@ -200,9 +200,9 @@ def load_and_pair_images(
     _ = warn_unpaired  # retained for API compatibility
     pairs_with_paths = load_and_pair_images_with_paths(
         gen_dir,
-        real_dir,
+        original_dir,
         strategy=strategy,
         manifest=manifest,
         image_size=image_size,
     )
-    return [(p.gen_tensor, p.real_tensor, p.name) for p in pairs_with_paths]
+    return [(p.gen_tensor, p.original_tensor, p.name) for p in pairs_with_paths]
