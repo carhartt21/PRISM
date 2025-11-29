@@ -1,6 +1,6 @@
 # PRISM: Pipeline for Robust Image Similarity Metrics
 
-PRISM (Pipeline for Robust Image Similarity Metrics) is a comprehensive Python evaluation pipeline for comparing generated images against real images to assess the quality and realism of image-to-image translation or weather synthesis models.
+PRISM (Pipeline for Robust Image Similarity Metrics) is a comprehensive Python evaluation pipeline for comparing generated images against original reference images to assess the quality and realism of image-to-image translation or weather synthesis models.
 
 ## Features
 
@@ -52,19 +52,22 @@ Evaluate generated images against reference images:
 ```bash
 python evaluate_generation.py \
   --generated ./path/to/generated_images \
-  --real ./path/to/reference_images \
+  --original ./path/to/original_images \
+  --target ./path/to/target_domain_images \
   --metrics fid ssim lpips psnr \
   --output results.json
 
 # Include semantic consistency
 python evaluate_generation.py \
   --generated ./path/to/generated_images \
-  --real ./path/to/reference_images \
+  --original ./path/to/original_images \
   --metrics fid psnr \
   --semantic-consistency \
   --semantic-model segformer-b3 \
   --output results_with_semantic.json
 ```
+
+`--original` should contain the paired originals that correspond to each generated image (needed for SSIM/LPIPS/semantic checks), whereas `--target` points to an unpaired gallery sampled from the desired domain so that FID can compare distributions. If you already have stored FID statistics (`mu`, `sigma`, optional `n`), you can omit `--target` and use `--fid-stats stats/target_domain.npz` instead.
 
 ### Weather Image Translation Example
 
@@ -73,7 +76,8 @@ For weather-specific evaluation:
 ```bash
 python evaluate_generation.py \
   --generated ./generated_weather \
-  --real ./real_weather \
+  --original ./original_clear \
+  --target ./target_weather \
   --metrics fid ssim lpips psnr is \
   --config configs/weather_eval.yaml \
   --batch-size 64 \
@@ -83,7 +87,8 @@ python evaluate_generation.py \
 # Weather translation with semantic focus
 python evaluate_generation.py \
   --generated ./generated_clear2fog \
-  --real ./real_fog \
+  --original ./original_clear \
+  --target ./target_fog \
   --metrics fid lpips \
   --semantic-consistency \
   --output clear2fog_semantic.json \
@@ -97,7 +102,8 @@ python evaluate_generation.py \
 | Argument | Description | Default |
 |----------|-------------|---------|
 | `--generated` | Path to generated images directory | Required |
-| `--real` | Path to reference images directory | Required |
+| `--original` | Path to reference/original images directory (paired with generated) | Required |
+| `--target` | Path to unpaired target-domain images for FID | None |
 | `--metrics` | Metrics to compute | `[fid, ssim, lpips, psnr, is]` |
 | `--batch-size` | Batch size for processing | `32` |
 | `--device` | Computation device (`cpu`, `cuda`, `auto`) | `auto` |
@@ -105,6 +111,7 @@ python evaluate_generation.py \
 | `--manifest` | CSV file for custom pairing | None |
 | `--output` | Output file path | `results.json` |
 | `--config` | Configuration file (YAML/JSON) | None |
+| `--fid-stats` | NPZ file containing precomputed FID stats (mu, sigma[, n]) | None |
 | `--verbose` | Verbosity level (`-v`, `-vv`) | `0` |
 | `--semantic-consistency` | Enable SegFormer-based semantic metrics | `False` |
 | `--semantic-model` | SegFormer backbone variant (`segformer-b0` … `segformer-b5`) | `segformer-b5` |
@@ -117,7 +124,8 @@ You can use YAML or JSON configuration files to specify parameters:
 **Example YAML config (configs/weather_eval.yaml):**
 ```yaml
 generated: ./generated_weather
-real: ./real_weather
+original: ./original_clear
+target: ./target_weather
 metrics: [fid, ssim, lpips, psnr]
 batch_size: 64
 device: auto
@@ -137,7 +145,7 @@ generated/
   ├── image_002.jpg
   └── image_003.png
 
-real/
+original/
   ├── image_001.jpg
   ├── image_002.png
   └── image_003.tiff
@@ -146,14 +154,16 @@ real/
 #### CSV Manifest Pairing
 Create a CSV file with custom pairing:
 ```csv
-gen_path,real_path
-generated/fog_001.png,real/clear_001.jpg
-generated/rain_002.png,real/sunny_002.png
+gen_path,original_path
+generated/fog_001.png,original/clear_001.jpg
+generated/rain_002.png,original/sunny_002.png
 ```
 
 Then use:
 ```bash
 python evaluate_generation.py \
+  --generated ./generated \
+  --original ./original \
   --pairs csv \
   --manifest custom_pairs.csv \
   --output results.json
@@ -163,8 +173,9 @@ python evaluate_generation.py \
 
 ### Fréchet Inception Distance (FID)
 - **Range**: [0, ∞) (lower is better)
-- **What it measures**: Distance between Gaussian fits of Inception-v3 feature embeddings for real vs. generated samples.
+- **What it measures**: Distance between Gaussian fits of Inception-v3 feature embeddings for original vs. generated samples.
 - **Best when**: You need a holistic realism signal that correlates with human judgment across varied datasets; ideal for tracking progress while training or comparing different model checkpoints.
+- **Data requirements**: Supply `--target <target_domain>` or `--fid-stats stats.npz` so FID can draw from the desired distribution.
 
 ### Structural Similarity Index (SSIM)
 - **Range**: [-1, 1] (higher is better)
@@ -184,11 +195,11 @@ python evaluate_generation.py \
 ### Inception Score (IS)
 - **Range**: [1, ∞) (higher is better)
 - **What it measures**: Confidence and diversity of class predictions from an Inception network on generated images only.
-- **Best when**: You lack paired real images but still want a quick read on sample quality/diversity (e.g., unconditional GANs). Less reliable for domain-shifted data.
+- **Best when**: You lack paired original images but still want a quick read on sample quality/diversity (e.g., unconditional GANs). Less reliable for domain-shifted data.
 
 ### Semantic Consistency (SegFormer)
 - **Range**: 0–100 % for pixel accuracy, mIoU, and frequency-weighted IoU (higher is better)
-- **What it measures**: Agreement between SegFormer segmentation masks for real vs. generated images, aggregated per class.
+- **What it measures**: Agreement between SegFormer segmentation masks for original vs. generated images, aggregated per class.
 - **Best when**: Auditing whether content integrity survives style / weather / domain shifts (e.g., roads stay roads, pedestrians stay pedestrians). Enables fine-grained analysis of which classes degrade.
 
 ## Output Format
@@ -199,7 +210,7 @@ The evaluation results are saved in JSON format with the following structure:
 {
   "timestamp": "2025-07-31T14:30:00",
   "generated": "./generated_weather",
-  "real": "./real_weather",
+  "original": "./original_weather",
   "metrics": {
     "fid": {
       "count": 100,
@@ -252,8 +263,8 @@ class Metric:
         # Initialize your metric here
 
     def __call__(self, x: torch.Tensor, y: torch.Tensor) -> torch.Tensor:
-        # x: generated images (B, C, H, W)
-        # y: real images (B, C, H, W)
+      # x: generated images (B, C, H, W)
+      # y: original images (B, C, H, W)
         # Return: metric scores (B,)
         scores = []
         for i in range(x.size(0)):
@@ -302,7 +313,7 @@ pytest tests/ --cov=.
 # Process large datasets efficiently
 python evaluate_generation.py \
   --generated ./large_dataset/generated \
-  --real ./large_dataset/real \
+  --original ./large_dataset/original \
   --batch-size 128 \
   --device cuda \
   --metrics fid ssim \
@@ -328,7 +339,7 @@ ls ./your_image_directory/
 **3. Filename pairing issues**
 ```bash
 # Use verbose mode to see pairing warnings
-python evaluate_generation.py -v --generated ./gen --real ./real
+python evaluate_generation.py -v --generated ./gen --original ./original
 ```
 
 **4. Import errors**
@@ -362,7 +373,7 @@ from metrics import registry
 # Load and pair images
 pairs = load_and_pair_images(
     gen_dir=Path("./generated"),
-    real_dir=Path("./real")
+  original_dir=Path("./original")
 )
 
 # Initialize metrics
@@ -370,9 +381,9 @@ metrics = registry.build(["fid", "ssim"], device="cuda")
 
 # Evaluate
 results = {}
-for gen_tensor, real_tensor, name in pairs:
+for gen_tensor, original_tensor, name in pairs:
     for metric in metrics:
-        score = metric(gen_tensor.unsqueeze(0), real_tensor.unsqueeze(0))
+    score = metric(gen_tensor.unsqueeze(0), original_tensor.unsqueeze(0))
         results.setdefault(name, {})[metric.name] = float(score)
 
 # Summarize

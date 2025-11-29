@@ -1,6 +1,6 @@
 {
   "generated": "./generated_images",
-  "real": "./reference_images",
+  "original": "./reference_images",
   "metrics": [
     "fid",
     "ssim",

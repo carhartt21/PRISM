@@ -35,10 +35,10 @@ clean:  ## Clean up temporary files
 
 example:  ## Run example evaluation
 	@echo "Creating example data..."
-	@mkdir -p example_data/generated example_data/real
-	@python -c "import torch; from PIL import Image; import numpy as np; [Image.fromarray((torch.rand(64,64,3)*255).numpy().astype('uint8')).save(f'example_data/generated/img_{i:03d}.png') for i in range(5)]; [Image.fromarray((torch.rand(64,64,3)*255).numpy().astype('uint8')).save(f'example_data/real/img_{i:03d}.jpg') for i in range(5)]"
+	@mkdir -p example_data/generated example_data/original
+	@python -c "import torch; from PIL import Image; import numpy as np; [Image.fromarray((torch.rand(64,64,3)*255).numpy().astype('uint8')).save(f'example_data/generated/img_{i:03d}.png') for i in range(5)]; [Image.fromarray((torch.rand(64,64,3)*255).numpy().astype('uint8')).save(f'example_data/original/img_{i:03d}.jpg') for i in range(5)]"
 	@echo "Running evaluation..."
-	python evaluate_generation.py --generated example_data/generated --real example_data/real --metrics ssim psnr --output example_results.json -v
+	python evaluate_generation.py --generated example_data/generated --original example_data/original --metrics ssim psnr --output example_results.json -v
 	@echo "Results saved to example_results.json"
 
 clean-example:  ## Clean example data
