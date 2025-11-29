@@ -252,6 +252,222 @@ def save_fid_stats(mu: np.ndarray, sigma: np.ndarray, n: int, output_path: Path)
     np.savez(output_path, mu=mu, sigma=sigma, n=n)
     logging.info("Saved FID stats to %s", output_path)
 
+
+def compute_fid_statistics(
+    image_dir: Path,
+    image_size: Tuple[int, int],
+    batch_size: int,
+    device: str,
+) -> Dict[str, np.ndarray]:
+    """Compute FID statistics (mu, sigma, n) for a directory of images.
+
+    Uses Inception-v3 to extract features and computes mean/covariance.
+    """
+    from torchmetrics.image.fid import FrechetInceptionDistance
+
+    fid_metric = FrechetInceptionDistance(feature=2048, reset_real_features=False)
+    fid_metric.to(device)
+
+    image_paths = find_image_files(image_dir)
+    if not image_paths:
+        raise ValueError(f"No images found in {image_dir}")
+
+    logging.info("Computing FID statistics for %d images in %s", len(image_paths), image_dir)
+
+    # Load and process images in batches
+    for batch_start in tqdm(
+        range(0, len(image_paths), batch_size),
+        desc=f"Processing {image_dir.name}",
+        unit_scale=True,
+    ):
+        batch_paths = image_paths[batch_start : batch_start + batch_size]
+        batch_tensors = [load_image(p, image_size) for p in batch_paths]
+        batch = torch.stack(batch_tensors).to(device, non_blocking=True)
+
+        # Convert to uint8 [0, 255] as required by FID
+        batch_uint8 = (batch * 255).clamp(0, 255).to(torch.uint8)
+
+        with torch.no_grad():
+            fid_metric.update(batch_uint8, real=True)
+
+    # Extract statistics from the metric's internal state
+    n = int(fid_metric.real_features_num_samples.item())
+    if n == 0:
+        raise ValueError("No features computed; check image directory")
+
+    # Recover mu and sigma from accumulated sums
+    mu = fid_metric.real_features_sum / n
+    # Covariance: E[X^T X] - mu^T mu
+    # The metric stores sum of outer products adjusted for covariance calculation
+    mu_outer = torch.outer(mu, mu)
+    sigma = fid_metric.real_features_cov_sum / (n - 1) - (n / (n - 1)) * mu_outer
+
+    return {
+        "mu": mu.cpu().numpy(),
+        "sigma": sigma.cpu().numpy(),
+        "n": n,
+    }
+
+
+def precalculate_stats(
+    generated_dir: Path,
+    target_dir: Path,
+    stats_dir: Path,
+    image_size: Tuple[int, int],
+    batch_size: int,
+    device: str,
+    per_domain: bool = False,
+    semantic_model: str = "segformer-b5",
+    compute_segmentation: bool = True,
+    compute_lpips_features: bool = True,
+) -> None:
+    """Precalculate and store FID statistics, segmentation maps, and LPIPS features.
+
+    If per_domain is True, computes stats for each subdomain folder.
+    
+    Args:
+        generated_dir: Directory with generated images
+        target_dir: Directory with target-domain images
+        stats_dir: Output directory for precomputed statistics
+        image_size: Image size for FID computation
+        batch_size: Batch size for processing
+        device: Computation device
+        per_domain: Whether to process per subdomain
+        semantic_model: SegFormer model variant for segmentation
+        compute_segmentation: Whether to precompute segmentation maps
+        compute_lpips_features: Whether to precompute LPIPS features
+    """
+    stats_dir.mkdir(parents=True, exist_ok=True)
+
+    # Initialize segmentation model if needed
+    segmentation_evaluator = None
+    if compute_segmentation:
+        from semantic_consistency import SegFormerEvaluator
+        model_name = SEGFORMER_MODEL_MAP[semantic_model]
+        logging.info("Initializing SegFormer (%s) for segmentation precomputation", semantic_model)
+        segmentation_evaluator = SegFormerEvaluator(model_name=model_name, device=device)
+
+    # Initialize LPIPS model if needed
+    lpips_model = None
+    if compute_lpips_features:
+        from torchmetrics.image.lpip import LearnedPerceptualImagePatchSimilarity
+        logging.info("Initializing LPIPS VGG model for feature extraction")
+        lpips_model = LearnedPerceptualImagePatchSimilarity(net_type='vgg').to(device)
+
+    def process_directory(
+        image_dir: Path,
+        output_prefix: str,
+        domain_stats_dir: Path,
+    ) -> None:
+        """Process a single directory: compute FID stats, segmentation, and LPIPS features."""
+        image_paths = find_image_files(image_dir)
+        if not image_paths:
+            logging.warning("No images found in %s", image_dir)
+            return
+
+        # --- FID Statistics ---
+        try:
+            fid_stats = compute_fid_statistics(image_dir, image_size, batch_size, device)
+            fid_path = domain_stats_dir / f"{output_prefix}_fid.npz"
+            save_fid_stats(fid_stats["mu"], fid_stats["sigma"], fid_stats["n"], fid_path)
+        except Exception as e:
+            logging.error("Failed to compute FID stats for %s: %s", image_dir, e)
+
+        # --- Segmentation Maps ---
+        if segmentation_evaluator is not None:
+            seg_dir = domain_stats_dir / f"{output_prefix}_segmentation"
+            seg_dir.mkdir(parents=True, exist_ok=True)
+            logging.info("Computing segmentation maps for %d images in %s", len(image_paths), image_dir)
+            
+            for batch_start in tqdm(
+                range(0, len(image_paths), batch_size),
+                desc=f"Segmentation {output_prefix}",
+                leave=False,
+            ):
+                batch_paths = image_paths[batch_start : batch_start + batch_size]
+                try:
+                    masks = segmentation_evaluator.segment_images(batch_paths)
+                    for path, mask in zip(batch_paths, masks):
+                        output_path = seg_dir / f"{path.stem}.npy"
+                        np.save(output_path, mask.astype(np.uint8))
+                except Exception as e:
+                    logging.error("Failed to segment batch starting at %s: %s", batch_paths[0], e)
+
+        # --- LPIPS Features ---
+        if lpips_model is not None:
+            lpips_dir = domain_stats_dir / f"{output_prefix}_lpips_features"
+            lpips_dir.mkdir(parents=True, exist_ok=True)
+            logging.info("Computing LPIPS features for %d images in %s", len(image_paths), image_dir)
+            
+            # Access the underlying VGG network for feature extraction
+            vgg_net = lpips_model.net
+            
+            for batch_start in tqdm(
+                range(0, len(image_paths), batch_size),
+                desc=f"LPIPS features {output_prefix}",
+                leave=False,
+            ):
+                batch_paths = image_paths[batch_start : batch_start + batch_size]
+                batch_tensors = [load_image(p, image_size) for p in batch_paths]
+                batch = torch.stack(batch_tensors).to(device, non_blocking=True)
+                
+                # Normalize to [-1, 1] as expected by LPIPS
+                batch_normalized = 2.0 * batch - 1.0
+                
+                try:
+                    with torch.no_grad():
+                        # Extract features from VGG layers
+                        features = vgg_net(batch_normalized)
+                        # features is a list of tensors from different VGG layers
+                        for i, (path, feat_list) in enumerate(zip(batch_paths, zip(*[f for f in features]))):
+                            # Concatenate features from all layers
+                            combined_features = torch.cat([f.flatten() for f in feat_list]).cpu().numpy()
+                            output_path = lpips_dir / f"{path.stem}.npy"
+                            np.save(output_path, combined_features)
+                except Exception as e:
+                    logging.error("Failed to extract LPIPS features for batch starting at %s: %s", batch_paths[0], e)
+
+    if per_domain:
+        # Discover domains from generated directory
+        domains = discover_domains(generated_dir)
+        if not domains:
+            logging.error("No domains found in %s", generated_dir)
+            return
+        logging.info("Precalculating stats for %d domains: %s", len(domains), domains)
+
+        for domain in tqdm(domains, desc="Precalculating domains"):
+            if domain == "_root":
+                gen_domain_dir = generated_dir
+                target_domain_dir = target_dir
+                domain_prefix = "root"
+            else:
+                gen_domain_dir = generated_dir / domain
+                target_domain_dir = target_dir / domain if target_dir else None
+                domain_prefix = domain
+
+            domain_stats_dir = stats_dir / domain_prefix
+            domain_stats_dir.mkdir(parents=True, exist_ok=True)
+
+            # Process generated directory
+            if gen_domain_dir.exists() and find_image_files(gen_domain_dir):
+                process_directory(gen_domain_dir, "generated", domain_stats_dir)
+
+            # Process target directory
+            if target_domain_dir and target_domain_dir.exists() and find_image_files(target_domain_dir):
+                process_directory(target_domain_dir, "target", domain_stats_dir)
+    else:
+        # Flat mode: compute stats for entire directories
+        # Generated stats
+        if generated_dir.exists() and find_image_files(generated_dir):
+            process_directory(generated_dir, "generated", stats_dir)
+
+        # Target stats
+        if target_dir and target_dir.exists() and find_image_files(target_dir):
+            process_directory(target_dir, "target", stats_dir)
+
+    logging.info("Precalculation complete. Stats saved to %s", stats_dir)
+
+
 # --------------------------------------------------------------------------- #
 def parse_args() -> argparse.Namespace:
     p = argparse.ArgumentParser(
@@ -260,8 +476,8 @@ def parse_args() -> argparse.Namespace:
     )
     p.add_argument("--generated", required=True, type=Path,
                    help="Folder with generated images.")
-    p.add_argument("--original", required=True, type=Path,
-                   help="Folder with original/reference images.")
+    p.add_argument("--original", type=Path,
+                   help="Folder with original/reference images (not required for --precalculate).")
     p.add_argument("--target", type=Path,
                    help="Folder with target-domain images (required for FID unless --fid-stats is provided).")
     p.add_argument("-m", "--metrics", nargs="+",
@@ -292,6 +508,13 @@ def parse_args() -> argparse.Namespace:
                    help="Calculate and save metrics per domain (subfolder).")
     p.add_argument("--stats-dir", type=Path, default=Path("stats"),
                    help="Directory to save/load per-domain FID stats.")
+    p.add_argument("--precalculate", action="store_true",
+                   help="Precalculate and store FID statistics for generated and target directories. "
+                        "Only requires --generated and --target; --original is not needed.")
+    p.add_argument("--no-segmentation", action="store_true",
+                   help="Skip precomputing segmentation maps during --precalculate.")
+    p.add_argument("--no-lpips", action="store_true",
+                   help="Skip precomputing LPIPS features during --precalculate.")
     return p.parse_args()
 
 
@@ -478,6 +701,34 @@ def main() -> None:
     )
     if semantic_device == "auto":
         semantic_device = "cuda" if torch.cuda.is_available() else "cpu"
+
+    # --------------------------------------------------------------------------
+    # Precalculate mode: compute and store FID statistics only
+    # --------------------------------------------------------------------------
+    if args.precalculate:
+        if target_dir is None:
+            logging.error("--precalculate requires --target to be specified")
+            sys.exit(1)
+        precalculate_stats(
+            generated_dir=args.generated,
+            target_dir=target_dir,
+            stats_dir=args.stats_dir,
+            image_size=image_size,
+            batch_size=args.batch_size,
+            device=device,
+            per_domain=args.per_domain,
+            semantic_model=semantic_model,
+            compute_segmentation=not args.no_segmentation,
+            compute_lpips_features=not args.no_lpips,
+        )
+        return
+
+    # --------------------------------------------------------------------------
+    # Validation: --original is required for evaluation mode
+    # --------------------------------------------------------------------------
+    if args.original is None:
+        logging.error("--original is required for evaluation (use --precalculate for stats-only mode)")
+        sys.exit(1)
 
     # --------------------------------------------------------------------------
     # Per-domain or flat evaluation
