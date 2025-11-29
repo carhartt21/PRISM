@@ -32,17 +32,17 @@ def test_compute_semantic_consistency_aggregates_scores():
     pairs = [
         LoadedImagePair(
             gen_tensor=torch.zeros(3, 4, 4),
-            real_tensor=torch.zeros(3, 4, 4),
+            original_tensor=torch.zeros(3, 4, 4),
             name="sample_a",
             gen_path=Path("/tmp/gen_a.png"),
-            real_path=Path("/tmp/real_a.png"),
+            original_path=Path("/tmp/original_a.png"),
         ),
         LoadedImagePair(
             gen_tensor=torch.ones(3, 4, 4),
-            real_tensor=torch.ones(3, 4, 4),
+            original_tensor=torch.ones(3, 4, 4),
             name="sample_b",
             gen_path=Path("/tmp/gen_b.png"),
-            real_path=Path("/tmp/real_b.png"),
+            original_path=Path("/tmp/original_b.png"),
         ),
     ]
 

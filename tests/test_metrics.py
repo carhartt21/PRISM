@@ -21,16 +21,16 @@ class TestMetrics:
 
         # Create random images in [0, 1] range
         gen_images = torch.rand(batch_size, channels, height, width)
-        real_images = torch.rand(batch_size, channels, height, width)
+        original_images = torch.rand(batch_size, channels, height, width)
 
-        return gen_images, real_images
+        return gen_images, original_images
 
     def test_ssim_metric(self, sample_images):
         """Test SSIM metric computation."""
-        gen_images, real_images = sample_images
+        gen_images, original_images = sample_images
 
         ssim_metric = SSIMMetric(device="cpu")
-        scores = ssim_metric(gen_images, real_images)
+        scores = ssim_metric(gen_images, original_images)
 
         assert isinstance(scores, torch.Tensor)
         assert scores.shape == (gen_images.size(0),)
@@ -38,10 +38,10 @@ class TestMetrics:
 
     def test_psnr_metric(self, sample_images):
         """Test PSNR metric computation."""
-        gen_images, real_images = sample_images
+        gen_images, original_images = sample_images
 
         psnr_metric = PSNRMetric(device="cpu")
-        scores = psnr_metric(gen_images, real_images)
+        scores = psnr_metric(gen_images, original_images)
 
         assert isinstance(scores, torch.Tensor)
         assert scores.shape == (gen_images.size(0),)
@@ -69,7 +69,7 @@ class TestMetrics:
     @patch('torchmetrics.image.fid.FrechetInceptionDistance')
     def test_fid_metric_mock(self, mock_fid_class, sample_images):
         """Test FID metric with mocked torchmetrics."""
-        gen_images, real_images = sample_images
+        gen_images, original_images = sample_images
 
         # Mock the FID metric
         mock_fid = MagicMock()
@@ -77,7 +77,7 @@ class TestMetrics:
         mock_fid_class.return_value = mock_fid
 
         fid_metric = FIDMetric(device="cpu")
-        scores = fid_metric(gen_images, real_images)
+        scores = fid_metric(gen_images, original_images)
 
         assert isinstance(scores, torch.Tensor)
         assert scores.shape == (gen_images.size(0),)
@@ -87,6 +87,36 @@ class TestMetrics:
         mock_fid.update.assert_called()
         mock_fid.compute.assert_called_once()
         mock_fid.reset.assert_called_once()
+
+    @patch('torchmetrics.image.fid.FrechetInceptionDistance')
+    def test_fid_metric_precomputed_stats(self, mock_fid_class, sample_images):
+        """Test FID metric when precomputed reference stats are supplied."""
+        gen_images, _ = sample_images
+
+        mock_fid = MagicMock()
+        mock_fid.real_features_sum = torch.zeros(4, dtype=torch.double)
+        mock_fid.real_features_cov_sum = torch.zeros(4, 4, dtype=torch.double)
+        mock_fid.real_features_num_samples = torch.tensor(0)
+        mock_fid.fake_features_sum = torch.zeros(4, dtype=torch.double)
+        mock_fid.fake_features_cov_sum = torch.zeros(4, 4, dtype=torch.double)
+        mock_fid.fake_features_num_samples = torch.tensor(0)
+        mock_fid.compute.return_value = torch.tensor(9.0)
+        mock_fid_class.return_value = mock_fid
+
+        stats = {
+            "mu": np.zeros(4, dtype=np.float32),
+            "sigma": np.eye(4, dtype=np.float32),
+            "n": 100,
+        }
+
+        fid_metric = FIDMetric(device="cpu", reference_stats=stats)
+        scores = fid_metric(gen_images, None)
+
+        assert isinstance(scores, torch.Tensor)
+        assert torch.all(scores == 9.0)
+        # Ensure real-image updates were skipped (only fake updates expected)
+        mock_calls = mock_fid.update.call_args_list
+        assert all(call.kwargs.get('real') is False for call in mock_calls)
 
     def test_metric_device_handling(self):
         """Test that metrics handle device specification correctly."""
@@ -101,16 +131,16 @@ class TestMetrics:
 
     def test_batch_processing(self, sample_images):
         """Test that metrics handle different batch sizes correctly."""
-        gen_images, real_images = sample_images
+        gen_images, original_images = sample_images
 
         ssim_metric = SSIMMetric(device="cpu")
 
         # Test with different batch sizes by slicing
         for batch_size in [1, 2]:
             gen_batch = gen_images[:batch_size]
-            real_batch = real_images[:batch_size]
+            original_batch = original_images[:batch_size]
 
-            scores = ssim_metric(gen_batch, real_batch)
+            scores = ssim_metric(gen_batch, original_batch)
             assert scores.shape == (batch_size,)
 
 

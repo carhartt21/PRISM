@@ -45,22 +45,22 @@ class TestImagePairing:
         """Test matching by filename."""
         # Create directories
         gen_dir = tmp_path / "gen"
-        real_dir = tmp_path / "real"
+        original_dir = tmp_path / "original"
         gen_dir.mkdir()
-        real_dir.mkdir()
+        original_dir.mkdir()
 
         # Create test images with dummy content
         for i in range(3):
             create_dummy_image(gen_dir / f"image_{i}.png")
-            create_dummy_image(real_dir / f"image_{i}.jpg")  # Different extension
+            create_dummy_image(original_dir / f"image_{i}.jpg")  # Different extension
 
         # Create unmatched image
         create_dummy_image(gen_dir / "unmatched.png")
 
         gen_files = find_image_files(gen_dir)
-        real_files = find_image_files(real_dir)
+        original_files = find_image_files(original_dir)
 
-        pairs = match_by_filename(gen_files, real_files)
+        pairs = match_by_filename(gen_files, original_files)
         assert len(pairs) == 3  # Should match 3 pairs, ignore unmatched
 
         # Check that names are correct
@@ -72,70 +72,70 @@ class TestImagePairing:
         """Test full loading and pairing pipeline."""
         # Create directories
         gen_dir = tmp_path / "gen"
-        real_dir = tmp_path / "real"
+        original_dir = tmp_path / "original"
         gen_dir.mkdir()
-        real_dir.mkdir()
+        original_dir.mkdir()
 
         # Create test images
         for i in range(2):
             create_dummy_image(gen_dir / f"test_{i}.png")
-            create_dummy_image(real_dir / f"test_{i}.jpg")
+            create_dummy_image(original_dir / f"test_{i}.jpg")
 
-        pairs = load_and_pair_images(gen_dir, real_dir)
+        pairs = load_and_pair_images(gen_dir, original_dir)
 
         assert len(pairs) == 2
 
         # Check tensor properties
-        gen_tensor, real_tensor, name = pairs[0]
+        gen_tensor, original_tensor, name = pairs[0]
         assert isinstance(gen_tensor, torch.Tensor)
-        assert isinstance(real_tensor, torch.Tensor)
+        assert isinstance(original_tensor, torch.Tensor)
         assert gen_tensor.shape == (3, 299, 299)  # Default size
-        assert real_tensor.shape == (3, 299, 299)
+        assert original_tensor.shape == (3, 299, 299)
         assert 0 <= gen_tensor.min() and gen_tensor.max() <= 1  # [0, 1] range
-        assert 0 <= real_tensor.min() and real_tensor.max() <= 1
+        assert 0 <= original_tensor.min() and original_tensor.max() <= 1
 
     def test_empty_directories(self, tmp_path):
         """Test handling of empty directories."""
         gen_dir = tmp_path / "gen"
-        real_dir = tmp_path / "real"
+        original_dir = tmp_path / "original"
         gen_dir.mkdir()
-        real_dir.mkdir()
+        original_dir.mkdir()
 
         with pytest.raises(ValueError, match="No images found"):
-            load_and_pair_images(gen_dir, real_dir)
+            load_and_pair_images(gen_dir, original_dir)
 
     def test_custom_image_size(self, tmp_path):
         """Test custom image sizing."""
         gen_dir = tmp_path / "gen"
-        real_dir = tmp_path / "real"
+        original_dir = tmp_path / "original"
         gen_dir.mkdir()
-        real_dir.mkdir()
+        original_dir.mkdir()
 
         create_dummy_image(gen_dir / "test.png")
-        create_dummy_image(real_dir / "test.jpg")
+        create_dummy_image(original_dir / "test.jpg")
 
         custom_size = (128, 128)
-        pairs = load_and_pair_images(gen_dir, real_dir, image_size=custom_size)
+        pairs = load_and_pair_images(gen_dir, original_dir, image_size=custom_size)
 
-        gen_tensor, real_tensor, _ = pairs[0]
+        gen_tensor, original_tensor, _ = pairs[0]
         assert gen_tensor.shape == (3, 128, 128)
-        assert real_tensor.shape == (3, 128, 128)
+        assert original_tensor.shape == (3, 128, 128)
 
     def test_load_and_pair_images_with_paths(self, tmp_path):
         """Ensure helper keeps track of source file paths."""
         gen_dir = tmp_path / "gen"
-        real_dir = tmp_path / "real"
+        original_dir = tmp_path / "original"
         gen_dir.mkdir()
-        real_dir.mkdir()
+        original_dir.mkdir()
 
         create_dummy_image(gen_dir / "alpha.png")
-        create_dummy_image(real_dir / "alpha.jpg")
+        create_dummy_image(original_dir / "alpha.jpg")
 
-        result = load_and_pair_images_with_paths(gen_dir, real_dir)
+        result = load_and_pair_images_with_paths(gen_dir, original_dir)
         assert len(result) == 1
         pair: LoadedImagePair = result[0]
         assert pair.gen_path.name == "alpha.png"
-        assert pair.real_path.name == "alpha.jpg"
+        assert pair.original_path.name == "alpha.jpg"
         assert pair.name == "alpha"
 
     def test_get_image_pairs_with_suffix_stripping(self, tmp_path):
