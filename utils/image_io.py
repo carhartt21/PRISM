@@ -49,8 +49,8 @@ def find_image_files(directory: Path) -> List[Path]:
     """Find all supported image files in a directory."""
     image_files = []
     for ext in SUPPORTED_EXTENSIONS:
-        image_files.extend(directory.glob(f"*{ext}"))
-        image_files.extend(directory.glob(f"*{ext.upper()}"))
+        image_files.extend(directory.rglob(f"*{ext}"))
+        image_files.extend(directory.rglob(f"*{ext.upper()}"))
     return sorted(image_files)
 
 

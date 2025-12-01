@@ -93,7 +93,28 @@ python evaluate_generation.py \
   --semantic-consistency \
   --output clear2fog_semantic.json \
   --device cuda
+  --output clear2fog_semantic.json \
+  --device cuda
 ```
+
+### Precalculation Mode
+
+Precalculate statistics (FID, Segmentation, LPIPS) for original and target datasets to speed up subsequent evaluations or for dataset analysis.
+
+```bash
+python evaluate_generation.py \
+  --precalculate \
+  --original ./path/to/original_images \
+  --target ./path/to/target_domain_images \
+  --stats-dir ./stats \
+  --batch-size 32
+```
+
+In this mode:
+- `--original` is required (stats will be computed for this directory).
+- `--target` is required (stats will be computed for this directory).
+- `--generated` is NOT used.
+- Output stats are saved to `--stats-dir` (default: `stats/`).
 
 ## Usage Guide
 

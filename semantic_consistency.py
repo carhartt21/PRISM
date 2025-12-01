@@ -103,7 +103,8 @@ class SegFormerEvaluator:
         self,
         model_name: str = "nvidia/segformer-b5-finetuned-cityscapes-1024-1024",
         device: Optional[str] = None,
-        class_names: Optional[List[str]] = None
+        class_names: Optional[List[str]] = None,
+        cache_dir: Optional[Path] = None
     ):
         """
         Initialize SegFormer model and processor.
@@ -111,6 +112,7 @@ class SegFormerEvaluator:
         Args:
             model_name: HuggingFace model identifier
             device: Computation device ('cuda' or 'cpu'). Auto-detect if None.
+            cache_dir: Optional directory to cache downloaded models
         """
         self.device = device if device else ('cuda' if torch.cuda.is_available() else 'cpu')
         self.class_names = class_names if class_names else CITYSCAPES_CLASS_NAMES
@@ -118,8 +120,16 @@ class SegFormerEvaluator:
         print(f"Initializing SegFormer ({model_name}) on {self.device}...")
         
         # Load processor and model
-        self.processor = SegformerImageProcessor.from_pretrained(model_name)
-        self.model = SegformerForSemanticSegmentation.from_pretrained(model_name)
+        try:
+            print(f"Attempting to load {model_name} from cache...")
+            self.processor = SegformerImageProcessor.from_pretrained(model_name, cache_dir=cache_dir, local_files_only=True)
+            self.model = SegformerForSemanticSegmentation.from_pretrained(model_name, cache_dir=cache_dir, local_files_only=True)
+            print("Successfully loaded from cache!")
+        except Exception as e:
+            print(f"Cache miss or error ({e}). Downloading model...")
+            self.processor = SegformerImageProcessor.from_pretrained(model_name, cache_dir=cache_dir)
+            self.model = SegformerForSemanticSegmentation.from_pretrained(model_name, cache_dir=cache_dir)
+        
         self.model.to(self.device)
         self.model.eval()
         

@@ -9,7 +9,7 @@ Supports: FID, IS, SSIM, LPIPS, PSNR  →  easily add more via plugins.
 """
 
 from __future__ import annotations
-import argparse, json, logging, sys, time
+import argparse, json, logging, sys, time, os
 from collections import defaultdict
 from pathlib import Path
 from typing import Any, Callable, Dict, Iterator, List, Optional, Sequence, Tuple
@@ -118,6 +118,7 @@ def compute_semantic_consistency(
     device: str,
     show_progress: bool = True,
     evaluator_factory: Optional[Callable[..., Any]] = None,
+    cache_dir: Optional[Path] = None,
 ) -> Dict[str, Dict[str, Any]]:
     """Run SegFormer-based semantic consistency on paired images."""
     if not pairs:
@@ -135,7 +136,7 @@ def compute_semantic_consistency(
     if evaluator_factory is None:
         from semantic_consistency import SegFormerEvaluator  # lazy import
 
-        evaluator = SegFormerEvaluator(model_name=model_name, device=device)
+        evaluator = SegFormerEvaluator(model_name=model_name, device=device, cache_dir=cache_dir)
     else:
         evaluator = evaluator_factory(model_name=model_name, device=device)
 
@@ -310,7 +311,7 @@ def compute_fid_statistics(
 
 
 def precalculate_stats(
-    generated_dir: Path,
+    original_dir: Path,
     target_dir: Path,
     stats_dir: Path,
     image_size: Tuple[int, int],
@@ -320,13 +321,14 @@ def precalculate_stats(
     semantic_model: str = "segformer-b5",
     compute_segmentation: bool = True,
     compute_lpips_features: bool = True,
+    cache_dir: Optional[Path] = None,
 ) -> None:
     """Precalculate and store FID statistics, segmentation maps, and LPIPS features.
 
     If per_domain is True, computes stats for each subdomain folder.
     
     Args:
-        generated_dir: Directory with generated images
+        original_dir: Directory with original/reference images
         target_dir: Directory with target-domain images
         stats_dir: Output directory for precomputed statistics
         image_size: Image size for FID computation
@@ -345,7 +347,7 @@ def precalculate_stats(
         from semantic_consistency import SegFormerEvaluator
         model_name = SEGFORMER_MODEL_MAP[semantic_model]
         logging.info("Initializing SegFormer (%s) for segmentation precomputation", semantic_model)
-        segmentation_evaluator = SegFormerEvaluator(model_name=model_name, device=device)
+        segmentation_evaluator = SegFormerEvaluator(model_name=model_name, device=device, cache_dir=cache_dir)
 
     # Initialize LPIPS model if needed
     lpips_model = None
@@ -417,7 +419,10 @@ def precalculate_stats(
                 try:
                     with torch.no_grad():
                         # Extract features from VGG layers
-                        features = vgg_net(batch_normalized)
+                        if hasattr(vgg_net, 'net'):
+                            features = vgg_net.net(batch_normalized)
+                        else:
+                            features = vgg_net(batch_normalized)
                         # features is a list of tensors from different VGG layers
                         for i, (path, feat_list) in enumerate(zip(batch_paths, zip(*[f for f in features]))):
                             # Concatenate features from all layers
@@ -428,38 +433,38 @@ def precalculate_stats(
                     logging.error("Failed to extract LPIPS features for batch starting at %s: %s", batch_paths[0], e)
 
     if per_domain:
-        # Discover domains from generated directory
-        domains = discover_domains(generated_dir)
+        # Discover domains from original directory
+        domains = discover_domains(original_dir)
         if not domains:
-            logging.error("No domains found in %s", generated_dir)
+            logging.error("No domains found in %s", original_dir)
             return
         logging.info("Precalculating stats for %d domains: %s", len(domains), domains)
 
         for domain in tqdm(domains, desc="Precalculating domains"):
             if domain == "_root":
-                gen_domain_dir = generated_dir
+                original_domain_dir = original_dir
                 target_domain_dir = target_dir
                 domain_prefix = "root"
             else:
-                gen_domain_dir = generated_dir / domain
+                original_domain_dir = original_dir / domain
                 target_domain_dir = target_dir / domain if target_dir else None
                 domain_prefix = domain
 
             domain_stats_dir = stats_dir / domain_prefix
             domain_stats_dir.mkdir(parents=True, exist_ok=True)
 
-            # Process generated directory
-            if gen_domain_dir.exists() and find_image_files(gen_domain_dir):
-                process_directory(gen_domain_dir, "generated", domain_stats_dir)
+            # Process original directory
+            if original_domain_dir.exists() and find_image_files(original_domain_dir):
+                process_directory(original_domain_dir, "original", domain_stats_dir)
 
             # Process target directory
             if target_domain_dir and target_domain_dir.exists() and find_image_files(target_domain_dir):
                 process_directory(target_domain_dir, "target", domain_stats_dir)
     else:
         # Flat mode: compute stats for entire directories
-        # Generated stats
-        if generated_dir.exists() and find_image_files(generated_dir):
-            process_directory(generated_dir, "generated", stats_dir)
+        # Original stats
+        if original_dir.exists() and find_image_files(original_dir):
+            process_directory(original_dir, "original", stats_dir)
 
         # Target stats
         if target_dir and target_dir.exists() and find_image_files(target_dir):
@@ -474,10 +479,10 @@ def parse_args() -> argparse.Namespace:
         description="Evaluate generated images against original reference images.",
         formatter_class=argparse.ArgumentDefaultsHelpFormatter
     )
-    p.add_argument("--generated", required=True, type=Path,
+    p.add_argument("--generated", type=Path,
                    help="Folder with generated images.")
     p.add_argument("--original", type=Path,
-                   help="Folder with original/reference images (not required for --precalculate).")
+                   help="Folder with original/reference images (required for --precalculate).")
     p.add_argument("--target", type=Path,
                    help="Folder with target-domain images (required for FID unless --fid-stats is provided).")
     p.add_argument("-m", "--metrics", nargs="+",
@@ -509,12 +514,14 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--stats-dir", type=Path, default=Path("stats"),
                    help="Directory to save/load per-domain FID stats.")
     p.add_argument("--precalculate", action="store_true",
-                   help="Precalculate and store FID statistics for generated and target directories. "
-                        "Only requires --generated and --target; --original is not needed.")
+                   help="Precalculate and store FID statistics for original and target directories. "
+                        "Only requires --original and --target; --generated is not needed.")
     p.add_argument("--no-segmentation", action="store_true",
                    help="Skip precomputing segmentation maps during --precalculate.")
     p.add_argument("--no-lpips", action="store_true",
                    help="Skip precomputing LPIPS features during --precalculate.")
+    p.add_argument("--cache-dir", type=Path, default=Path("/scratch/chge7185/models"),
+                   help="Directory to cache downloaded models (default: /scratch/chge7185/models).")
     return p.parse_args()
 
 
@@ -537,6 +544,7 @@ def evaluate_domain(
     semantic_device: str,
     verbose: int,
     stats_dir: Optional[Path] = None,
+    cache_dir: Optional[Path] = None,
 ) -> Dict[str, Any]:
     """Evaluate a single domain and return results dict."""
     fid_requested = "fid" in metric_names
@@ -626,6 +634,7 @@ def evaluate_domain(
                 model_variant=semantic_model,
                 device=semantic_device,
                 show_progress=verbose == 0,
+                cache_dir=cache_dir,
             )
         except Exception as exc:  # noqa: BLE001
             logging.error("[%s] Semantic consistency evaluation failed: %s", domain_name, exc)
@@ -659,6 +668,13 @@ def evaluate_domain(
 # --------------------------------------------------------------------------- #
 def main() -> None:
     args = parse_args()
+    
+    # Set TORCH_HOME to cache_dir to control where models are downloaded
+    if args.cache_dir:
+        args.cache_dir.mkdir(parents=True, exist_ok=True)
+        os.environ['TORCH_HOME'] = str(args.cache_dir)
+        logging.info("Set TORCH_HOME to %s", args.cache_dir)
+
     configure_logger(args.verbose)
 
     # Load external configuration -------------------------------------------------
@@ -709,8 +725,11 @@ def main() -> None:
         if target_dir is None:
             logging.error("--precalculate requires --target to be specified")
             sys.exit(1)
+        if args.original is None:
+            logging.error("--precalculate requires --original to be specified")
+            sys.exit(1)
         precalculate_stats(
-            generated_dir=args.generated,
+            original_dir=args.original,
             target_dir=target_dir,
             stats_dir=args.stats_dir,
             image_size=image_size,
@@ -720,6 +739,7 @@ def main() -> None:
             semantic_model=semantic_model,
             compute_segmentation=not args.no_segmentation,
             compute_lpips_features=not args.no_lpips,
+            cache_dir=args.cache_dir,
         )
         return
 
@@ -727,7 +747,7 @@ def main() -> None:
     # Validation: --original is required for evaluation mode
     # --------------------------------------------------------------------------
     if args.original is None:
-        logging.error("--original is required for evaluation (use --precalculate for stats-only mode)")
+        logging.error("--original is required for evaluation")
         sys.exit(1)
 
     # --------------------------------------------------------------------------
@@ -781,6 +801,7 @@ def main() -> None:
                 semantic_device=semantic_device,
                 verbose=args.verbose,
                 stats_dir=args.stats_dir,
+                cache_dir=args.cache_dir,
             )
             all_domain_results["domains"][domain] = result
 
