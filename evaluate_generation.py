@@ -119,8 +119,33 @@ def compute_semantic_consistency(
     show_progress: bool = True,
     evaluator_factory: Optional[Callable[..., Any]] = None,
     cache_dir: Optional[Path] = None,
+    batch_size: int = 16,
+    original_segmentation_cache: Optional[Path] = None,
+    generated_segmentation_cache: Optional[Path] = None,
+    original_segmentation_cache_dirs: Optional[Dict[str, Path]] = None,
 ) -> Dict[str, Dict[str, Any]]:
-    """Run SegFormer-based semantic consistency on paired images."""
+    """Run SegFormer-based semantic consistency on paired images.
+    
+    Uses batched inference for significant speedup. Supports precalculated
+    segmentation masks for even faster evaluation.
+    
+    Args:
+        pairs: Sequence of LoadedImagePair objects
+        model_variant: SegFormer model variant (e.g., 'segformer-b5')
+        device: Computation device
+        show_progress: Whether to show progress bar
+        evaluator_factory: Optional factory for creating evaluator (for testing)
+        cache_dir: Directory for caching downloaded models
+        batch_size: Batch size for processing
+        original_segmentation_cache: Single directory with precalculated masks for original images
+            Expected structure: {cache_dir}/{image_stem}.npy
+        generated_segmentation_cache: Directory with precalculated masks for generated images
+            Expected structure: {cache_dir}/{image_stem}.npy
+        original_segmentation_cache_dirs: Dict mapping dataset names to cache directories.
+            The dataset is inferred from the image path (e.g., .../BDD100k/... -> BDD100k).
+            Expected structure: {dataset: Path_to_cache_dir}
+            Example: {'BDD100k': Path('/stats/BDD100k/original_segmentation'), ...}
+    """
     if not pairs:
         return {
             "scalars": {},
@@ -140,28 +165,45 @@ def compute_semantic_consistency(
     else:
         evaluator = evaluator_factory(model_name=model_name, device=device)
 
-    iterator = (
-        tqdm(pairs, desc="Semantic consistency", leave=False)
-        if show_progress
-        else pairs
-    )
     per_image_scalars: Dict[str, Dict[str, float]] = {}
     detailed_results: Dict[str, Dict[str, Any]] = {}
     raw_results: List[Dict[str, Any]] = []
 
-    for pair in iterator:
-        result = evaluator.evaluate_pair(pair.original_path, pair.gen_path)
-        raw_results.append(result)
-        per_image_scalars[pair.name] = {
-            "semantic_pixel_accuracy": float(result.get("pixel_accuracy", 0.0)),
-            "semantic_mIoU": float(result.get("mIoU", 0.0)),
-            "semantic_fw_IoU": float(result.get("fw_IoU", 0.0)),
-        }
-        detailed_results[pair.name] = {
-            **result,
-            "generated_image": str(pair.gen_path),
-            "original_image": str(pair.original_path),
-        }
+    # Use batched evaluation for efficiency
+    path_pairs = [(p.original_path, p.gen_path) for p in pairs]
+    
+    # Process in batches with progress bar
+    total_batches = (len(pairs) + batch_size - 1) // batch_size
+    
+    iterator = range(0, len(pairs), batch_size)
+    if show_progress:
+        iterator = tqdm(iterator, desc="Semantic consistency", total=total_batches, leave=False)
+    
+    for batch_start in iterator:
+        batch_pairs = pairs[batch_start:batch_start + batch_size]
+        batch_path_pairs = path_pairs[batch_start:batch_start + batch_size]
+        
+        # Batched segmentation and evaluation with cache support
+        batch_results = evaluator.evaluate_pairs_batched(
+            batch_path_pairs,
+            batch_size=len(batch_path_pairs),
+            original_cache_dir=original_segmentation_cache,
+            generated_cache_dir=generated_segmentation_cache,
+            original_cache_dirs=original_segmentation_cache_dirs,
+        )
+        
+        for pair, result in zip(batch_pairs, batch_results):
+            raw_results.append(result)
+            per_image_scalars[pair.name] = {
+                "semantic_pixel_accuracy": float(result.get("pixel_accuracy", 0.0)),
+                "semantic_mIoU": float(result.get("mIoU", 0.0)),
+                "semantic_fw_IoU": float(result.get("fw_IoU", 0.0)),
+            }
+            detailed_results[pair.name] = {
+                **result,
+                "generated_image": str(pair.gen_path),
+                "original_image": str(pair.original_path),
+            }
 
     summary = aggregate_semantic_results(raw_results)
     metadata = {
@@ -211,6 +253,27 @@ def load_fid_stats(stats_path: Path) -> Dict[str, np.ndarray]:
         if "n" in data:
             stats["n"] = int(data["n"])  # type: ignore[assignment]
         return stats
+
+
+def extract_target_domain(domain_name: str) -> str:
+    """Extract the target domain name from a translation folder name.
+    
+    Handles folder names like 'sunny_day2cloudy' where the target domain is 'cloudy'.
+    The delimiter '2' separates source from target domain.
+    
+    Args:
+        domain_name: The full domain/folder name (e.g., 'sunny_day2cloudy' or 'cloudy')
+        
+    Returns:
+        The target domain name (e.g., 'cloudy')
+    """
+    if '2' in domain_name:
+        # Split on '2' and take the part after it
+        parts = domain_name.split('2', 1)
+        if len(parts) > 1 and parts[1]:
+            return parts[1]
+    # No '2' delimiter or nothing after it; return original name
+    return domain_name
 
 
 def discover_domains(root_dir: Path) -> List[str]:
@@ -488,7 +551,8 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("-m", "--metrics", nargs="+",
                    default=["fid", "ssim", "lpips", "psnr", "is"],
                    help="Metrics to compute (plugins).")
-    p.add_argument("-b", "--batch-size", type=int, default=32)
+    p.add_argument("-b", "--batch-size", type=int, default=64,
+                   help="Batch size for metric computation.")
     p.add_argument("--device", choices=["cpu", "cuda", "auto"], default="auto",
                    help="Computation device.")
     p.add_argument("--pairs", choices=["auto", "csv"], default="auto",
@@ -509,6 +573,8 @@ def parse_args() -> argparse.Namespace:
                    help="SegFormer backbone variant (default segformer-b5).")
     p.add_argument("--semantic-device", choices=["cpu", "cuda", "auto"],
                    help="Device for semantic consistency evaluator (defaults to --device or auto).")
+    p.add_argument("--semantic-batch-size", type=int, default=16,
+                   help="Batch size for semantic consistency (SegFormer). Adjust based on GPU memory.")
     p.add_argument("--per-domain", action="store_true",
                    help="Calculate and save metrics per domain (subfolder).")
     p.add_argument("--stats-dir", type=Path, default=Path("stats"),
@@ -542,11 +608,24 @@ def evaluate_domain(
     semantic_enabled: bool,
     semantic_model: str,
     semantic_device: str,
+    semantic_batch_size: int,
     verbose: int,
     stats_dir: Optional[Path] = None,
     cache_dir: Optional[Path] = None,
+    original_segmentation_cache: Optional[Path] = None,
+    generated_segmentation_cache: Optional[Path] = None,
+    original_segmentation_cache_dirs: Optional[Dict[str, Path]] = None,
 ) -> Dict[str, Any]:
-    """Evaluate a single domain and return results dict."""
+    """Evaluate a single domain and return results dict.
+    
+    Args:
+        original_segmentation_cache: Single directory with precalculated segmentation masks for original images
+            Expected structure: {cache_dir}/{image_stem}.npy
+        generated_segmentation_cache: Directory with precalculated segmentation masks for generated images
+        original_segmentation_cache_dirs: Dict mapping dataset names to cache directories.
+            The dataset is inferred from the image path (e.g., .../BDD100k/... -> BDD100k).
+            Expected structure: {'BDD100k': Path('/stats/BDD100k/original_segmentation'), ...}
+    """
     fid_requested = "fid" in metric_names
 
     # Load or compute FID reference stats
@@ -580,6 +659,7 @@ def evaluate_domain(
         strategy=pairs_strategy,
         manifest=manifest,
         image_size=image_size,
+        num_workers=8
     )
     if not pairs:
         logging.warning("[%s] No valid image pairs found; skipping domain.", domain_name)
@@ -627,7 +707,13 @@ def evaluate_domain(
     # Semantic consistency evaluation
     semantic_payload: Optional[Dict[str, Any]] = None
     if semantic_enabled:
-        logging.info("[%s] Running semantic consistency (model=%s, device=%s)", domain_name, semantic_model, semantic_device)
+        logging.info("[%s] Running semantic consistency (model=%s, device=%s, batch_size=%d)", domain_name, semantic_model, semantic_device, semantic_batch_size)
+        if original_segmentation_cache and original_segmentation_cache.exists():
+            logging.info("[%s] Using precalculated original segmentation masks from %s", domain_name, original_segmentation_cache)
+        if original_segmentation_cache_dirs:
+            logging.info("[%s] Using precalculated original segmentation masks from %d dataset directories", domain_name, len(original_segmentation_cache_dirs))
+        if generated_segmentation_cache and generated_segmentation_cache.exists():
+            logging.info("[%s] Using precalculated generated segmentation masks from %s", domain_name, generated_segmentation_cache)
         try:
             semantic_payload = compute_semantic_consistency(
                 pairs=pairs,
@@ -635,6 +721,10 @@ def evaluate_domain(
                 device=semantic_device,
                 show_progress=verbose == 0,
                 cache_dir=cache_dir,
+                batch_size=semantic_batch_size,
+                original_segmentation_cache=original_segmentation_cache,
+                generated_segmentation_cache=generated_segmentation_cache,
+                original_segmentation_cache_dirs=original_segmentation_cache_dirs,
             )
         except Exception as exc:  # noqa: BLE001
             logging.error("[%s] Semantic consistency evaluation failed: %s", domain_name, exc)
@@ -777,12 +867,48 @@ def main() -> None:
                 domain_fid_stats = fid_stats_path
             else:
                 gen_domain_dir = args.generated / domain
-                original_domain_dir = args.original / domain
-                target_domain_dir = target_dir / domain if target_dir else None
-                # Try domain-specific FID stats first
-                domain_fid_stats = args.stats_dir / f"{domain}_fid.npz" if args.stats_dir else None
+                # Original images are matched by filename from the root original directory
+                # (not organized by weather domain, but by dataset)
+                original_domain_dir = args.original
+                # Extract target domain name (e.g., 'cloudy' from 'sunny_day2cloudy')
+                target_domain_name = extract_target_domain(domain)
+                target_domain_dir = target_dir / target_domain_name if target_dir else None
+                # Try domain-specific FID stats first (using target domain name)
+                domain_fid_stats = args.stats_dir / f"{target_domain_name}_fid.npz" if args.stats_dir else None
+                if domain_fid_stats and not domain_fid_stats.exists():
+                    # Fall back to full domain name
+                    domain_fid_stats = args.stats_dir / f"{domain}_fid.npz" if args.stats_dir else None
                 if domain_fid_stats and not domain_fid_stats.exists():
                     domain_fid_stats = fid_stats_path  # fall back to global
+                
+                logging.debug("[%s] Target domain: %s, Target dir: %s, FID stats: %s",
+                             domain, target_domain_name, target_domain_dir, domain_fid_stats)
+
+            # Build segmentation cache directories per dataset
+            # Structure: stats/{dataset}/original_segmentation/{image_stem}.npy
+            # Known datasets: ACDC, BDD100k, BDD10k, IDD-AW, MapillaryVistas, OUTSIDE15k
+            original_seg_cache_dirs: Optional[Dict[str, Path]] = None
+            generated_seg_cache = None
+            
+            if args.stats_dir and semantic_enabled:
+                known_datasets = ['ACDC', 'BDD100k', 'BDD10k', 'IDD-AW', 'MapillaryVistas', 'OUTSIDE15k']
+                original_seg_cache_dirs = {}
+                for dataset in known_datasets:
+                    seg_cache_path = args.stats_dir / dataset / "original_segmentation"
+                    if seg_cache_path.exists():
+                        original_seg_cache_dirs[dataset] = seg_cache_path
+                
+                if not original_seg_cache_dirs:
+                    original_seg_cache_dirs = None
+                else:
+                    logging.debug("[%s] Found segmentation caches for datasets: %s", 
+                                 domain, list(original_seg_cache_dirs.keys()))
+                
+                # Generated images typically don't have precalculated masks
+                # but support it if available
+                generated_seg_cache = args.stats_dir / domain / "generated_segmentation"
+                if not generated_seg_cache.exists():
+                    generated_seg_cache = None
 
             result = evaluate_domain(
                 domain_name=domain,
@@ -799,9 +925,13 @@ def main() -> None:
                 semantic_enabled=semantic_enabled,
                 semantic_model=semantic_model,
                 semantic_device=semantic_device,
+                semantic_batch_size=args.semantic_batch_size,
                 verbose=args.verbose,
                 stats_dir=args.stats_dir,
                 cache_dir=args.cache_dir,
+                original_segmentation_cache=None,  # Use multi-dataset cache instead
+                generated_segmentation_cache=generated_seg_cache,
+                original_segmentation_cache_dirs=original_seg_cache_dirs,
             )
             all_domain_results["domains"][domain] = result
 
@@ -897,17 +1027,46 @@ def main() -> None:
         # Semantic consistency evaluation
         semantic_payload: Optional[Dict[str, Any]] = None
         if semantic_enabled:
+            # Build segmentation cache directories per dataset (flat mode)
+            # Structure: stats/{dataset}/original_segmentation/{image_stem}.npy
+            original_seg_cache_dirs: Optional[Dict[str, Path]] = None
+            generated_seg_cache = None
+            
+            if args.stats_dir:
+                known_datasets = ['ACDC', 'BDD100k', 'BDD10k', 'IDD-AW', 'MapillaryVistas', 'OUTSIDE15k']
+                original_seg_cache_dirs = {}
+                for dataset in known_datasets:
+                    seg_cache_path = args.stats_dir / dataset / "original_segmentation"
+                    if seg_cache_path.exists():
+                        original_seg_cache_dirs[dataset] = seg_cache_path
+                
+                if not original_seg_cache_dirs:
+                    original_seg_cache_dirs = None
+                
+                generated_seg_cache = args.stats_dir / "generated_segmentation"
+                if not generated_seg_cache.exists():
+                    generated_seg_cache = None
+            
             logging.info(
-                "Running semantic consistency evaluation (model=%s, device=%s)",
+                "Running semantic consistency evaluation (model=%s, device=%s, batch_size=%d)",
                 semantic_model,
                 semantic_device,
+                args.semantic_batch_size,
             )
+            if original_seg_cache_dirs:
+                logging.info("Using precalculated original segmentation masks from %d dataset directories", len(original_seg_cache_dirs))
+            if generated_seg_cache:
+                logging.info("Using precalculated generated segmentation masks from %s", generated_seg_cache)
             try:
                 semantic_payload = compute_semantic_consistency(
                     pairs=pairs,
                     model_variant=semantic_model,
                     device=semantic_device,
                     show_progress=args.verbose == 0,
+                    batch_size=args.semantic_batch_size,
+                    original_segmentation_cache=None,  # Use multi-dataset cache instead
+                    generated_segmentation_cache=generated_seg_cache,
+                    original_segmentation_cache_dirs=original_seg_cache_dirs,
                 )
             except Exception as exc:  # noqa: BLE001
                 logging.error("Semantic consistency evaluation failed: %s", exc)
