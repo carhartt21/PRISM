@@ -104,7 +104,8 @@ class SegFormerEvaluator:
         model_name: str = "nvidia/segformer-b5-finetuned-cityscapes-1024-1024",
         device: Optional[str] = None,
         class_names: Optional[List[str]] = None,
-        cache_dir: Optional[Path] = None
+        cache_dir: Optional[Path] = None,
+        segmentation_cache_dir: Optional[Path] = None,
     ):
         """
         Initialize SegFormer model and processor.
@@ -113,11 +114,16 @@ class SegFormerEvaluator:
             model_name: HuggingFace model identifier
             device: Computation device ('cuda' or 'cpu'). Auto-detect if None.
             cache_dir: Optional directory to cache downloaded models
+            segmentation_cache_dir: Optional directory with precalculated segmentation masks.
+                Expected structure: {segmentation_cache_dir}/{image_stem}.npy
         """
         self.device = device if device else ('cuda' if torch.cuda.is_available() else 'cpu')
         self.class_names = class_names if class_names else CITYSCAPES_CLASS_NAMES
+        self.segmentation_cache_dir = Path(segmentation_cache_dir) if segmentation_cache_dir else None
         
         print(f"Initializing SegFormer ({model_name}) on {self.device}...")
+        if self.segmentation_cache_dir:
+            print(f"Using precalculated segmentation cache: {self.segmentation_cache_dir}")
         
         # Load processor and model
         try:
@@ -137,19 +143,73 @@ class SegFormerEvaluator:
         self.num_classes = self.model.config.num_labels
         
         print(f"Model loaded with {self.num_classes} classes!\n")
-    
-    def segment_image(self, image_path: Path) -> np.ndarray:
-        """Perform segmentation for a single image path."""
-        return self.segment_images([image_path])[0]
 
-    def segment_images(self, image_paths: List[Path]) -> List[np.ndarray]:
-        """Batch-segment multiple images to amortize preprocessing and inference."""
+    def load_cached_mask(self, image_path: Path) -> Optional[np.ndarray]:
+        """
+        Try to load a precalculated segmentation mask from cache.
+        
+        Args:
+            image_path: Path to the original image
+            
+        Returns:
+            Segmentation mask as numpy array, or None if not found
+        """
+        if self.segmentation_cache_dir is None:
+            return None
+        
+        cache_path = self.segmentation_cache_dir / f"{image_path.stem}.npy"
+        if cache_path.exists():
+            try:
+                return np.load(cache_path, allow_pickle=False)
+            except Exception as e:
+                print(f"Warning: Failed to load cached mask {cache_path}: {e}")
+                return None
+        return None
+
+    def segment_image(self, image_path: Path, use_cache: bool = True) -> np.ndarray:
+        """Perform segmentation for a single image path, using cache if available."""
+        if use_cache:
+            cached = self.load_cached_mask(image_path)
+            if cached is not None:
+                return cached
+        return self.segment_images([image_path], use_cache=False)[0]
+
+    def segment_images(self, image_paths: List[Path], use_cache: bool = True) -> List[np.ndarray]:
+        """
+        Batch-segment multiple images to amortize preprocessing and inference.
+        
+        Args:
+            image_paths: List of paths to images to segment
+            use_cache: Whether to check for precalculated masks first
+            
+        Returns:
+            List of segmentation masks as numpy arrays
+        """
         if not image_paths:
             return []
 
+        # Check cache first if enabled
+        results: List[Optional[np.ndarray]] = [None] * len(image_paths)
+        paths_to_compute: List[Tuple[int, Path]] = []
+        
+        if use_cache and self.segmentation_cache_dir:
+            for idx, path in enumerate(image_paths):
+                cached = self.load_cached_mask(path)
+                if cached is not None:
+                    results[idx] = cached
+                else:
+                    paths_to_compute.append((idx, path))
+        else:
+            paths_to_compute = list(enumerate(image_paths))
+        
+        # If all masks were cached, return early
+        if not paths_to_compute:
+            return [r for r in results if r is not None]
+        
+        # Compute remaining masks
         images: List[Image.Image] = []
         original_sizes: List[Tuple[int, int]] = []
-        for path in image_paths:
+        for _, path in paths_to_compute:
             image = Image.open(path).convert('RGB')
             images.append(image)
             original_sizes.append(image.size)  # (W, H)
@@ -157,7 +217,7 @@ class SegFormerEvaluator:
         inputs = self.processor(images=images, return_tensors="pt")
         inputs = {k: v.to(self.device) for k, v in inputs.items()}
 
-        predictions: List[np.ndarray] = []
+        computed_masks: List[np.ndarray] = []
         with torch.no_grad():
             outputs = self.model(**inputs)
             logits = outputs.logits
@@ -171,9 +231,13 @@ class SegFormerEvaluator:
                     align_corners=False
                 )
                 prediction = upsampled_logits.argmax(dim=1).squeeze(0)
-                predictions.append(prediction.cpu().numpy())
+                computed_masks.append(prediction.cpu().numpy())
+        
+        # Place computed masks back into results
+        for (original_idx, _), mask in zip(paths_to_compute, computed_masks):
+            results[original_idx] = mask
 
-        return predictions
+        return [r for r in results if r is not None]
     
     @staticmethod
     def compute_pixel_accuracy(mask1: np.ndarray, mask2: np.ndarray) -> float:
@@ -299,9 +363,9 @@ class SegFormerEvaluator:
         translated_path: Path
     ) -> Dict[str, float]:
         """Evaluate semantic consistency for a single image pair."""
-        # Segment both images
-        source_mask = self.segment_image(source_path)
-        translated_mask = self.segment_image(translated_path)
+        # Segment both images in a single batch for efficiency
+        masks = self.segment_images([source_path, translated_path])
+        source_mask, translated_mask = masks[0], masks[1]
         
         # Compute metrics
         pixel_acc = self.compute_pixel_accuracy(source_mask, translated_mask)
@@ -325,6 +389,173 @@ class SegFormerEvaluator:
             'fw_IoU': weighted_iou_metrics['fw_IoU'],
             'class_details': weighted_iou_metrics['class_details']
         }
+
+    def evaluate_pairs_batched(
+        self,
+        pairs: List[Tuple[Path, Path]],
+        batch_size: int = 8,
+        original_cache_dir: Optional[Path] = None,
+        generated_cache_dir: Optional[Path] = None,
+        original_cache_dirs: Optional[Dict[str, Path]] = None,
+    ) -> List[Dict[str, Any]]:
+        """
+        Evaluate semantic consistency for multiple pairs with batched inference.
+        
+        This is significantly faster than calling evaluate_pair() in a loop
+        because it batches the GPU inference and supports precalculated masks.
+        
+        Args:
+            pairs: List of (source_path, translated_path) tuples
+            batch_size: Number of pairs to process at once
+            original_cache_dir: Single directory with precalculated masks for original images
+                Expected structure: {original_cache_dir}/{image_stem}.npy
+            generated_cache_dir: Directory with precalculated masks for generated images
+                Expected structure: {generated_cache_dir}/{image_stem}.npy
+            original_cache_dirs: Dict mapping dataset names to cache directories.
+                The dataset is inferred from the image path (e.g., .../BDD100k/... -> BDD100k)
+                Expected structure: {cache_dir}/{image_stem}.npy
+            
+        Returns:
+            List of result dictionaries, one per pair
+        """
+        results = []
+        cache_hits = 0
+        cache_misses = 0
+        
+        def find_dataset_from_path(image_path: Path) -> Optional[str]:
+            """Extract dataset name from image path (e.g., .../BDD100k/cloudy/image.png -> BDD100k)"""
+            parts = image_path.parts
+            # Known dataset names
+            known_datasets = {'ACDC', 'BDD100k', 'BDD10k', 'IDD-AW', 'MapillaryVistas', 'OUTSIDE15k'}
+            for part in parts:
+                if part in known_datasets:
+                    return part
+            return None
+        
+        def load_cached_mask_multi(image_path: Path, single_cache: Optional[Path], multi_cache: Optional[Dict[str, Path]]) -> Optional[np.ndarray]:
+            """Try to load mask from single cache dir or multi-cache dict based on dataset."""
+            # Try single cache first
+            if single_cache:
+                cache_path = single_cache / f"{image_path.stem}.npy"
+                if cache_path.exists():
+                    try:
+                        return np.load(cache_path, allow_pickle=False)
+                    except Exception:
+                        pass
+            
+            # Try multi-cache based on dataset
+            if multi_cache:
+                dataset = find_dataset_from_path(image_path)
+                if dataset and dataset in multi_cache:
+                    cache_path = multi_cache[dataset] / f"{image_path.stem}.npy"
+                    if cache_path.exists():
+                        try:
+                            return np.load(cache_path, allow_pickle=False)
+                        except Exception:
+                            pass
+            
+            # Also check instance's segmentation_cache_dir
+            if self.segmentation_cache_dir:
+                cache_path = self.segmentation_cache_dir / f"{image_path.stem}.npy"
+                if cache_path.exists():
+                    try:
+                        return np.load(cache_path, allow_pickle=False)
+                    except Exception:
+                        pass
+            
+            return None
+        
+        for batch_start in range(0, len(pairs), batch_size):
+            batch_pairs = pairs[batch_start:batch_start + batch_size]
+            
+            # Try to load cached masks first
+            source_masks: List[Optional[np.ndarray]] = []
+            translated_masks: List[Optional[np.ndarray]] = []
+            paths_to_compute: List[Tuple[int, str, Path]] = []  # (pair_idx, 'source'|'translated', path)
+            
+            for i, (source_path, translated_path) in enumerate(batch_pairs):
+                # Check original/source cache (supports multi-dataset structure)
+                source_mask = load_cached_mask_multi(source_path, original_cache_dir, original_cache_dirs)
+                
+                if source_mask is not None:
+                    cache_hits += 1
+                else:
+                    paths_to_compute.append((i, 'source', source_path))
+                    cache_misses += 1
+                source_masks.append(source_mask)
+                
+                # Check generated cache (typically single directory)
+                translated_mask = None
+                if generated_cache_dir:
+                    cache_path = generated_cache_dir / f"{translated_path.stem}.npy"
+                    if cache_path.exists():
+                        try:
+                            translated_mask = np.load(cache_path, allow_pickle=False)
+                            cache_hits += 1
+                        except Exception:
+                            pass
+                
+                if translated_mask is None:
+                    paths_to_compute.append((i, 'translated', translated_path))
+                    cache_misses += 1
+                translated_masks.append(translated_mask)
+            
+            # Compute any missing masks in a single batch
+            if paths_to_compute:
+                compute_paths = [path for _, _, path in paths_to_compute]
+                computed_masks = self.segment_images(compute_paths, use_cache=False)
+                
+                for (pair_idx, mask_type, _), mask in zip(paths_to_compute, computed_masks):
+                    if mask_type == 'source':
+                        source_masks[pair_idx] = mask
+                    else:
+                        translated_masks[pair_idx] = mask
+            
+            # Compute metrics for each pair
+            for i, (source_path, translated_path) in enumerate(batch_pairs):
+                source_mask = source_masks[i]
+                translated_mask = translated_masks[i]
+                
+                if source_mask is None or translated_mask is None:
+                    # This shouldn't happen, but handle gracefully
+                    results.append({
+                        'pixel_accuracy': 0.0,
+                        'mIoU': 0.0,
+                        'class_IoUs': {},
+                        'fw_IoU': 0.0,
+                        'class_details': {},
+                        'error': 'Failed to compute segmentation masks'
+                    })
+                    continue
+                
+                pixel_acc = self.compute_pixel_accuracy(source_mask, translated_mask)
+                iou_metrics = self.compute_iou(
+                    source_mask,
+                    translated_mask,
+                    self.num_classes,
+                    self.class_names
+                )
+                weighted_iou_metrics = self.compute_frequency_weighted_iou(
+                    source_mask,
+                    translated_mask,
+                    self.num_classes,
+                    self.class_names
+                )
+                
+                results.append({
+                    'pixel_accuracy': pixel_acc,
+                    'mIoU': iou_metrics['mIoU'] * 100.0,
+                    'class_IoUs': iou_metrics['class_IoUs'],
+                    'fw_IoU': weighted_iou_metrics['fw_IoU'],
+                    'class_details': weighted_iou_metrics['class_details']
+                })
+        
+        # Log cache statistics at the end
+        total = cache_hits + cache_misses
+        if total > 0:
+            print(f"Segmentation cache: {cache_hits}/{total} hits ({100*cache_hits/total:.1f}%), {cache_misses} computed")
+        
+        return results
 
 class DeepLabV3Evaluator:
     """
