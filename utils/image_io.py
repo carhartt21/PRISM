@@ -11,7 +11,10 @@ from typing import List, Tuple, Optional, Union
 
 import torch
 import torchvision.transforms as T
-from PIL import Image
+from PIL import Image, ImageFile
+
+# Allow loading of truncated images
+ImageFile.LOAD_TRUNCATED_IMAGES = True
 from tqdm.auto import tqdm as _tqdm
 
 
