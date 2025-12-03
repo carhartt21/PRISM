@@ -8,7 +8,11 @@ Usage:
 """
 
 import argparse
+import os
+from concurrent.futures import ProcessPoolExecutor, as_completed
 from pathlib import Path
+from typing import Tuple, Optional
+
 from PIL import Image
 from tqdm import tqdm
 
@@ -45,12 +49,50 @@ def center_crop(image: Image.Image, target_size: int = 512) -> Image.Image:
     return image.crop((left, top, right, bottom))
 
 
+def process_single_image(
+    args: Tuple[Path, Path, Path, int]
+) -> Tuple[bool, Optional[str]]:
+    """
+    Process a single image. Designed for parallel execution.
+    
+    Args:
+        args: Tuple of (img_path, input_path, output_path, crop_size)
+        
+    Returns:
+        Tuple of (success, error_message or None)
+    """
+    img_path, input_path, output_path, crop_size = args
+    try:
+        rel_path = img_path.relative_to(input_path)
+        out_file = output_path / rel_path
+        
+        # Load image
+        img = Image.open(img_path).convert('RGB')
+        w, h = img.size
+        if w == crop_size and h == crop_size:
+            # Already the correct size, skip cropping/saving
+            return (True, None)
+        
+        # Center crop
+        cropped = center_crop(img, crop_size)
+        
+        # Save
+        out_file.parent.mkdir(parents=True, exist_ok=True)
+        cropped.save(str(out_file), quality=95)
+        
+        return (True, None)
+        
+    except Exception as e:
+        return (False, f"Error processing {img_path}: {e}")
+
+
 def process_images(
     input_dir: str,
     output_dir: str = None,
     inplace: bool = False,
     crop_size: int = 512,
     dry_run: bool = False,
+    num_workers: int = 0,
 ):
     """
     Process all images in input_dir and subdirectories.
@@ -61,6 +103,7 @@ def process_images(
         inplace: If True, overwrite original images
         crop_size: Target crop size (default 512)
         dry_run: If True, only print what would be done
+        num_workers: Number of parallel workers. 0 = auto (cpu_count), 1 = sequential
     """
     input_path = Path(input_dir)
     
@@ -103,29 +146,61 @@ def process_images(
             print(f"  ... and {len(image_files) - 10} more")
         return
     
-    processed = 0
-    errors = 0
+    # Determine number of workers
+    if num_workers == 0:
+        num_workers = os.cpu_count() or 4
     
-    for img_path in tqdm(image_files, desc="Cropping images"):
-        try:
-            rel_path = img_path.relative_to(input_path)
-            out_file = output_path / rel_path
+    processed = 0
+    skipped = 0
+    errors = 0
+    error_messages = []
+    
+    # Prepare arguments for parallel processing
+    process_args = [
+        (img_path, input_path, output_path, crop_size)
+        for img_path in image_files
+    ]
+    
+    if num_workers == 1:
+        # Sequential processing
+        for args in tqdm(process_args, desc="Cropping images"):
+            success, error_msg = process_single_image(args)
+            if success:
+                if error_msg is None:
+                    processed += 1
+            else:
+                errors += 1
+                if error_msg:
+                    error_messages.append(error_msg)
+    else:
+        # Parallel processing
+        print(f"Using {num_workers} parallel workers")
+        with ProcessPoolExecutor(max_workers=num_workers) as executor:
+            futures = {
+                executor.submit(process_single_image, args): args[0]
+                for args in process_args
+            }
             
-            # Load image
-            img = Image.open(img_path).convert('RGB')
-            
-            # Center crop
-            cropped = center_crop(img, crop_size)
-            
-            # Save
-            out_file.parent.mkdir(parents=True, exist_ok=True)
-            cropped.save(str(out_file), quality=95)
-            
-            processed += 1
-            
-        except Exception as e:
-            print(f"\nError processing {img_path}: {e}")
-            errors += 1
+            for future in tqdm(
+                as_completed(futures),
+                total=len(futures),
+                desc=f"Cropping images ({num_workers} workers)"
+            ):
+                success, error_msg = future.result()
+                if success:
+                    processed += 1
+                else:
+                    errors += 1
+                    if error_msg:
+                        error_messages.append(error_msg)
+    
+    # Print any errors at the end
+    if error_messages:
+        print(f"\nErrors encountered:")
+        for msg in error_messages[:10]:
+            print(f"  {msg}")
+        if len(error_messages) > 10:
+            print(f"  ... and {len(error_messages) - 10} more errors")
     
     print(f"\nDone! Processed {processed} images with {errors} errors")
 
@@ -147,6 +222,9 @@ Examples:
     
     # Dry run (see what would be done)
     python center_crop_images.py -i /path/to/images -o /path/to/output --dry-run
+    
+    # Use 8 parallel workers
+    python center_crop_images.py -i /path/to/images -o /path/to/output --workers 8
 """
     )
     parser.add_argument(
@@ -177,6 +255,12 @@ Examples:
         action="store_true",
         help="Only print what would be done, don't actually process"
     )
+    parser.add_argument(
+        "--workers", "-w",
+        type=int,
+        default=1,
+        help="Number of parallel workers. 0 = auto (cpu_count), 1 = sequential (default: 1)"
+    )
     
     args = parser.parse_args()
     
@@ -192,6 +276,7 @@ Examples:
         inplace=args.inplace,
         crop_size=args.size,
         dry_run=args.dry_run,
+        num_workers=args.workers,
     )
 
 
