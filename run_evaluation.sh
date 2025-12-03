@@ -3,10 +3,14 @@
 # Script to run evaluation using precalculated statistics.
 # This script evaluates generated images against original images using
 # precomputed FID statistics, segmentation maps, and LPIPS features.
+#
+# Two-step process:
+# 1. Create manifest matching generated images to originals (handles _fake suffix, nested dirs)
+# 2. Run evaluation using the manifest
 
 # Directories
 # Generated: The generated/translated images to evaluate
-GENERATED_DIR="/scratch/aaa_exchange/AWARE/GENERATED_IMAGES"
+GENERATED_DIR="/scratch/aaa_exchange/AWARE/GENERATED_IMAGES/cycleGAN"
 
 # Original: The original source images (for paired metrics like SSIM, LPIPS, PSNR)
 ORIGINAL_DIR="/scratch/aaa_exchange/AWARE/FINAL_SPLITS/train/images"
@@ -17,42 +21,69 @@ TARGET_DIR="/scratch/aaa_exchange/AWARE/AWACS/train"
 # Statistics directory (contains precomputed FID stats, segmentation, LPIPS features)
 STATS_DIR="/scratch/aaa_exchange/AWARE/STATS"
 
+# Manifest file (created by preprocessing step)
+MANIFEST_FILE="${GENERATED_DIR}/manifest.csv"
+
 # Output file for evaluation results
 OUTPUT_FILE="evaluation_results.json"
 
 # Cache directory for models
 CACHE_DIR="/scratch/chge7185/models"
 
-echo "Starting evaluation..."
+echo "========================================="
+echo "Evaluation Pipeline"
+echo "========================================="
 echo "Generated Dir: $GENERATED_DIR"
 echo "Original Dir: $ORIGINAL_DIR"
 echo "Target Dir: $TARGET_DIR"
 echo "Stats Dir: $STATS_DIR"
+echo "Manifest: $MANIFEST_FILE"
 echo "Output: $OUTPUT_FILE"
 echo "Cache Dir: $CACHE_DIR"
+echo ""
 
 source venv/bin/activate
 
-# Run evaluation
-# --generated: Generated/translated images to evaluate
-# --original: Original domain folder (for paired metrics)
-# --target: Target domain folder (used if FID stats not precomputed)
-# --stats-dir: Directory with precomputed statistics
-# --per-domain: Calculate metrics per domain (subfolder)
-# --semantic-consistency: Compute semantic consistency via SegFormer
-# --verbose: Show progress
+# Step 1: Create manifest (if not exists or force regenerate)
+if [ ! -f "$MANIFEST_FILE" ] || [ "$1" == "--regenerate-manifest" ]; then
+    echo "Step 1: Creating evaluation manifest..."
+    python3 helper/prepare_evaluation_manifest.py \
+        --generated "$GENERATED_DIR" \
+        --original "$ORIGINAL_DIR" \
+        --target "$TARGET_DIR" \
+        -o "$MANIFEST_FILE" \
+        --verbose
+    
+    if [ $? -ne 0 ]; then
+        echo "Error: Manifest creation failed"
+        exit 1
+    fi
+    echo ""
+else
+    echo "Step 1: Using existing manifest: $MANIFEST_FILE"
+    echo ""
+fi
+
+# Step 2: Run evaluation using the manifest
+echo "Step 2: Running evaluation..."
 python3 evaluate_generation.py \
     --generated "$GENERATED_DIR" \
     --original "$ORIGINAL_DIR" \
     --target "$TARGET_DIR" \
     --stats-dir "$STATS_DIR" \
-    --metrics fid ssim lpips is \
+    --pairs csv \
+    --manifest "$MANIFEST_FILE" \
+    --metrics fid ssim lpips \
     --semantic-consistency \
     --per-domain \
     --device auto \
     --cache-dir "$CACHE_DIR" \
-    --batch-size 16 \
+    --batch-size 64 \
+    --semantic-batch-size 16 \
     --output "$OUTPUT_FILE" \
     --verbose
 
+echo ""
+echo "========================================="
 echo "Evaluation complete. Results saved to $OUTPUT_FILE"
+echo "========================================="
