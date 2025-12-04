@@ -241,11 +241,34 @@ class SegFormerEvaluator:
     
     @staticmethod
     def compute_pixel_accuracy(mask1: np.ndarray, mask2: np.ndarray) -> float:
-        """Compute pixel-wise accuracy between two segmentation masks."""
-        assert mask1.shape == mask2.shape, "Masks must have the same shape"
+        """Compute pixel-wise accuracy between two segmentation masks.
+        
+        If masks have different shapes, resize mask2 to match mask1 using
+        nearest-neighbor interpolation (to preserve class labels).
+        """
+        if mask1.shape != mask2.shape:
+            # Resize mask2 to match mask1 using nearest-neighbor interpolation
+            from scipy.ndimage import zoom
+            zoom_factors = (mask1.shape[0] / mask2.shape[0], mask1.shape[1] / mask2.shape[1])
+            mask2 = zoom(mask2, zoom_factors, order=0)  # order=0 = nearest neighbor
+        
         correct_pixels = np.sum(mask1 == mask2)
         total_pixels = mask1.size
         return (correct_pixels / total_pixels) * 100.0
+    
+    @staticmethod
+    def _resize_mask_to_match(mask1: np.ndarray, mask2: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
+        """Resize mask2 to match mask1's shape if they differ.
+        
+        Uses nearest-neighbor interpolation to preserve class labels.
+        """
+        if mask1.shape == mask2.shape:
+            return mask1, mask2
+        
+        from scipy.ndimage import zoom
+        zoom_factors = (mask1.shape[0] / mask2.shape[0], mask1.shape[1] / mask2.shape[1])
+        mask2_resized = zoom(mask2, zoom_factors, order=0)  # order=0 = nearest neighbor
+        return mask1, mask2_resized
     
     @staticmethod
     def compute_iou(
@@ -254,8 +277,14 @@ class SegFormerEvaluator:
         num_classes: int,
         class_names: Optional[List[str]] = None
     ) -> Dict[str, Any]:
-        """Compute IoU metrics."""
-        assert mask1.shape == mask2.shape, "Masks must have the same shape"
+        """Compute IoU metrics.
+        
+        If masks have different shapes, resize mask2 to match mask1.
+        """
+        if mask1.shape != mask2.shape:
+            from scipy.ndimage import zoom
+            zoom_factors = (mask1.shape[0] / mask2.shape[0], mask1.shape[1] / mask2.shape[1])
+            mask2 = zoom(mask2, zoom_factors, order=0)
         
         ious = []
         class_ious = {}
@@ -303,8 +332,10 @@ class SegFormerEvaluator:
         Returns:
             Dictionary with fw-IoU, mIoU, and class frequencies (values may be nested)
         """
-
-        assert mask1.shape == mask2.shape, "Masks must have the same shape"
+        if mask1.shape != mask2.shape:
+            from scipy.ndimage import zoom
+            zoom_factors = (mask1.shape[0] / mask2.shape[0], mask1.shape[1] / mask2.shape[1])
+            mask2 = zoom(mask2, zoom_factors, order=0)
         
         class_ious = []
         class_frequencies = []
@@ -662,6 +693,8 @@ class DeepLabV3Evaluator:
         """
         Compute pixel-wise accuracy between two segmentation masks.
         
+        If masks have different shapes, resize mask2 to match mask1.
+        
         Args:
             mask1: First segmentation mask (H, W)
             mask2: Second segmentation mask (H, W)
@@ -669,7 +702,11 @@ class DeepLabV3Evaluator:
         Returns:
             Pixel accuracy as percentage (0-100)
         """
-        assert mask1.shape == mask2.shape, "Masks must have the same shape"
+        if mask1.shape != mask2.shape:
+            from scipy.ndimage import zoom
+            zoom_factors = (mask1.shape[0] / mask2.shape[0], mask1.shape[1] / mask2.shape[1])
+            mask2 = zoom(mask2, zoom_factors, order=0)
+        
         correct_pixels = np.sum(mask1 == mask2)
         total_pixels = mask1.size
         return (correct_pixels / total_pixels) * 100.0
@@ -684,6 +721,8 @@ class DeepLabV3Evaluator:
         """
         Compute Intersection-over-Union (IoU) metrics.
         
+        If masks have different shapes, resize mask2 to match mask1.
+        
         Args:
             mask1: First segmentation mask (H, W)
             mask2: Second segmentation mask (H, W)
@@ -692,7 +731,10 @@ class DeepLabV3Evaluator:
         Returns:
             Dictionary with mIoU and class-wise IoU values
         """
-        assert mask1.shape == mask2.shape, "Masks must have the same shape"
+        if mask1.shape != mask2.shape:
+            from scipy.ndimage import zoom
+            zoom_factors = (mask1.shape[0] / mask2.shape[0], mask1.shape[1] / mask2.shape[1])
+            mask2 = zoom(mask2, zoom_factors, order=0)
         
         ious = []
         class_ious = {}
@@ -735,6 +777,8 @@ class DeepLabV3Evaluator:
         """
         Compute frequency-weighted IoU, accounting for class imbalance.
         
+        If masks have different shapes, resize mask2 to match mask1.
+        
         Args:
             mask1: First segmentation mask (H, W)
             mask2: Second segmentation mask (H, W)
@@ -744,8 +788,10 @@ class DeepLabV3Evaluator:
         Returns:
             Dictionary with fw-IoU, mIoU, and class frequencies (values may be nested)
         """
-
-        assert mask1.shape == mask2.shape, "Masks must have the same shape"
+        if mask1.shape != mask2.shape:
+            from scipy.ndimage import zoom
+            zoom_factors = (mask1.shape[0] / mask2.shape[0], mask1.shape[1] / mask2.shape[1])
+            mask2 = zoom(mask2, zoom_factors, order=0)
         
         class_ious = []
         class_frequencies = []
