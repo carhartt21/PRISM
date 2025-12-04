@@ -370,7 +370,13 @@ class RunningStats:
         self.sum = 0.0
     
     def update(self, x: float) -> None:
-        """Add a new value using Welford's online algorithm."""
+        """Add a new value using Welford's online algorithm.
+        
+        NaN values are skipped to avoid corrupting statistics.
+        """
+        import math
+        if math.isnan(x):
+            return  # Skip NaN values
         self.n += 1
         self.sum += x
         delta = x - self.mean

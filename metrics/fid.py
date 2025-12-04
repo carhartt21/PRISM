@@ -24,16 +24,33 @@ class Metric:
             self._apply_reference_stats(reference_stats)
 
     def __call__(self, x: torch.Tensor, y: Optional[torch.Tensor]) -> torch.Tensor:
+        # FID requires at least 2 samples to compute distribution statistics
+        if x.size(0) < 2:
+            # Return NaN for batches too small to compute FID
+            return torch.full((x.size(0),), float('nan'), device=x.device)
+        
         # Ensure images are in [0, 255] range and uint8 for FID
         x_uint8 = (x * 255).clamp(0, 255).to(torch.uint8)
         if not self.uses_reference_stats:
             if y is None:
                 raise ValueError("FID metric requires target-domain images or reference stats")
+            if y.size(0) < 2:
+                # Return NaN if target batch is too small
+                return torch.full((x.size(0),), float('nan'), device=x.device)
             y_uint8 = (y * 255).clamp(0, 255).to(torch.uint8)
             self.metric.update(y_uint8, real=True)
 
         self.metric.update(x_uint8, real=False)
-        fid = self.metric.compute()
+        
+        try:
+            fid = self.metric.compute()
+        except RuntimeError as e:
+            if "More than one sample is required" in str(e):
+                # Return NaN if FID computation fails due to insufficient samples
+                self.metric.reset()
+                return torch.full((x.size(0),), float('nan'), device=x.device)
+            raise
+        
         self.metric.reset()
 
         # Return FID score for each image in batch (FID is a global metric)
