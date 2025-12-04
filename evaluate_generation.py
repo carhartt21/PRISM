@@ -9,7 +9,7 @@ Supports: FID, IS, SSIM, LPIPS, PSNR  →  easily add more via plugins.
 """
 
 from __future__ import annotations
-import argparse, json, logging, sys, time, os
+import argparse, json, logging, sys, time, os, gc
 from collections import defaultdict
 from pathlib import Path
 from typing import Any, Callable, Dict, Iterator, List, Optional, Sequence, Tuple
@@ -25,6 +25,7 @@ try:  # pragma: no cover - supports both package and script execution
         find_image_files,
         load_and_pair_images_with_paths,
         load_image,
+        pair_image_paths,
     )
     from .utils.stats import summarise_metrics         # mean/std/CI
     from .utils.logging_setup import configure_logger  # coloured logging
@@ -34,6 +35,7 @@ except ImportError:  # pragma: no cover
         find_image_files,
         load_and_pair_images_with_paths,
         load_image,
+        pair_image_paths,
     )
     from utils.stats import summarise_metrics         # mean/std/CI
     from utils.logging_setup import configure_logger  # coloured logging
@@ -317,6 +319,378 @@ def save_fid_stats(mu: np.ndarray, sigma: np.ndarray, n: int, output_path: Path)
     logging.info("Saved FID stats to %s", output_path)
 
 
+def load_batch_pairs(
+    path_pairs: List[Tuple[Path, Path, str, Optional[str], Optional[str]]],
+    image_size: Tuple[int, int],
+) -> List[LoadedImagePair]:
+    """Load a batch of image pairs from paths.
+    
+    Args:
+        path_pairs: List of (gen_path, original_path, name, domain, dataset) tuples
+        image_size: Target image size (height, width)
+    
+    Returns:
+        List of LoadedImagePair objects with domain/dataset metadata
+    """
+    loaded = []
+    for item in path_pairs:
+        # Handle both 3-tuple (legacy) and 5-tuple (new) formats
+        if len(item) == 5:
+            gen_path, original_path, name, domain, dataset = item
+        else:
+            gen_path, original_path, name = item[:3]
+            domain, dataset = None, None
+        
+        try:
+            gen_tensor = load_image(gen_path, image_size)
+            original_tensor = load_image(original_path, image_size)
+            loaded.append(LoadedImagePair(
+                gen_tensor=gen_tensor,
+                original_tensor=original_tensor,
+                name=name,
+                gen_path=gen_path,
+                original_path=original_path,
+                domain=domain,
+                dataset=dataset,
+            ))
+        except Exception as e:
+            logging.warning(f"Failed to load pair {name}: {e}")
+    return loaded
+
+
+class RunningStats:
+    """Compute running mean/variance without storing all values."""
+    
+    def __init__(self):
+        self.n = 0
+        self.mean = 0.0
+        self.M2 = 0.0  # For Welford's online variance algorithm
+        self.min_val = float('inf')
+        self.max_val = float('-inf')
+        self.sum = 0.0
+    
+    def update(self, x: float) -> None:
+        """Add a new value using Welford's online algorithm."""
+        self.n += 1
+        self.sum += x
+        delta = x - self.mean
+        self.mean += delta / self.n
+        delta2 = x - self.mean
+        self.M2 += delta * delta2
+        self.min_val = min(self.min_val, x)
+        self.max_val = max(self.max_val, x)
+    
+    def update_batch(self, values: List[float]) -> None:
+        """Add multiple values."""
+        for x in values:
+            self.update(x)
+    
+    @property
+    def variance(self) -> float:
+        if self.n < 2:
+            return 0.0
+        return self.M2 / (self.n - 1)
+    
+    @property
+    def std(self) -> float:
+        return self.variance ** 0.5
+    
+    def to_dict(self) -> Dict[str, float]:
+        return {
+            "mean": self.mean,
+            "std": self.std,
+            "min": self.min_val if self.n > 0 else 0.0,
+            "max": self.max_val if self.n > 0 else 0.0,
+            "count": self.n,
+        }
+
+
+class HierarchicalStats:
+    """Track statistics hierarchically: domain → dataset → metric → RunningStats."""
+    
+    def __init__(self, metric_names: List[str], semantic_enabled: bool = False):
+        self.metric_names = metric_names
+        self.semantic_enabled = semantic_enabled
+        self.semantic_metrics = ["semantic_pixel_accuracy", "semantic_mIoU", "semantic_fw_IoU"]
+        
+        # Stats at domain level (aggregate)
+        self.domain_stats: Dict[str, RunningStats] = {}
+        self._init_stats(self.domain_stats)
+        
+        # Stats per dataset within domain
+        self.dataset_stats: Dict[str, Dict[str, RunningStats]] = {}
+    
+    def _init_stats(self, stats_dict: Dict[str, RunningStats]) -> None:
+        """Initialize RunningStats for all metrics."""
+        for m in self.metric_names:
+            stats_dict[m] = RunningStats()
+        if self.semantic_enabled:
+            for m in self.semantic_metrics:
+                stats_dict[m] = RunningStats()
+    
+    def ensure_dataset(self, dataset: Optional[str]) -> str:
+        """Ensure dataset entry exists, return normalized dataset name."""
+        dataset_key = dataset or "unknown"
+        if dataset_key not in self.dataset_stats:
+            self.dataset_stats[dataset_key] = {}
+            self._init_stats(self.dataset_stats[dataset_key])
+        return dataset_key
+    
+    def update(self, metric_name: str, value: float, dataset: Optional[str] = None) -> None:
+        """Update both domain-level and dataset-level stats."""
+        # Update domain aggregate
+        if metric_name in self.domain_stats:
+            self.domain_stats[metric_name].update(value)
+        
+        # Update dataset-specific
+        dataset_key = self.ensure_dataset(dataset)
+        if metric_name in self.dataset_stats[dataset_key]:
+            self.dataset_stats[dataset_key][metric_name].update(value)
+    
+    def to_dict(self) -> Dict[str, Any]:
+        """Convert to nested dictionary structure."""
+        result = {
+            "aggregate": {},
+            "per_dataset": {},
+        }
+        
+        # Domain aggregate stats
+        for metric_name, stats in self.domain_stats.items():
+            if stats.n > 0:
+                result["aggregate"][metric_name] = stats.to_dict()
+        
+        # Per-dataset stats
+        for dataset_name, metrics in self.dataset_stats.items():
+            result["per_dataset"][dataset_name] = {}
+            for metric_name, stats in metrics.items():
+                if stats.n > 0:
+                    result["per_dataset"][dataset_name][metric_name] = stats.to_dict()
+        
+        return result
+
+
+def evaluate_domain_streaming(
+    *,
+    domain_name: str,
+    gen_dir: Path,
+    original_dir: Path,
+    target_dir: Optional[Path],
+    fid_stats_path: Optional[Path],
+    metric_names: Sequence[str],
+    batch_size: int,
+    chunk_size: int,
+    device: str,
+    image_size: Tuple[int, int],
+    pairs_strategy: str,
+    manifest: Optional[Path],
+    semantic_enabled: bool,
+    semantic_model: str,
+    semantic_device: str,
+    semantic_batch_size: int,
+    verbose: int,
+    stats_dir: Optional[Path] = None,
+    cache_dir: Optional[Path] = None,
+    original_segmentation_cache_dirs: Optional[Dict[str, Path]] = None,
+    generated_segmentation_cache: Optional[Path] = None,
+    store_per_image: bool = False,
+) -> Dict[str, Any]:
+    """
+    Memory-efficient streaming evaluation for large datasets.
+    
+    Processes images in chunks without loading all into memory at once.
+    Uses running statistics instead of storing all per-image results.
+    
+    Args:
+        chunk_size: Number of image pairs to process per chunk (default 1000)
+        store_per_image: Whether to store per-image results (high memory usage)
+    """
+    logging.info("[%s] Starting streaming evaluation (chunk_size=%d)", domain_name, chunk_size)
+    
+    # Get image paths only (no loading yet)
+    # When using CSV manifest with per-domain mode, filter by domain
+    filter_domain = domain_name if pairs_strategy == "csv" and manifest else None
+    path_pairs = pair_image_paths(
+        gen_dir=gen_dir,
+        original_dir=original_dir,
+        strategy=pairs_strategy,
+        manifest=manifest,
+        filter_domain=filter_domain,
+    )
+    
+    if not path_pairs:
+        logging.warning("[%s] No valid image pairs found; skipping domain.", domain_name)
+        return {"domain": domain_name, "error": "No valid image pairs found"}
+    
+    total_pairs = len(path_pairs)
+    logging.info("[%s] Found %d image pairs (streaming mode)", domain_name, total_pairs)
+    
+    # Load FID reference stats
+    fid_reference_stats: Optional[Dict[str, np.ndarray]] = None
+    fid_requested = "fid" in metric_names
+    if fid_stats_path and fid_stats_path.exists():
+        fid_reference_stats = load_fid_stats(fid_stats_path)
+        logging.info("[%s] Loaded precomputed FID stats from %s", domain_name, fid_stats_path)
+    elif fid_requested:
+        logging.warning("[%s] FID requested but no precomputed stats; skipping FID in streaming mode", domain_name)
+        metric_names = [m for m in metric_names if m != "fid"]
+        fid_requested = False
+    
+    # Build metrics
+    fid_plugin_options = {"reference_stats": fid_reference_stats} if fid_reference_stats else None
+    metrics = build_metric_plugins(metric_names, device=device, fid_options=fid_plugin_options)
+    if not metrics:
+        logging.warning("[%s] No valid metrics; skipping domain.", domain_name)
+        return {"domain": domain_name, "error": "No valid metrics"}
+    
+    # Initialize hierarchical statistics tracker (domain-level + per-dataset)
+    metric_names_list = [m.name for m in metrics]
+    hierarchical_stats = HierarchicalStats(metric_names_list, semantic_enabled=semantic_enabled)
+    
+    # Count unique datasets for logging
+    datasets_found = set()
+    for item in path_pairs:
+        if len(item) >= 5 and item[4]:
+            datasets_found.add(item[4])
+    if datasets_found:
+        logging.info("[%s] Found %d datasets: %s", domain_name, len(datasets_found), sorted(datasets_found))
+    
+    # Optional: store per-image results (high memory, disabled by default)
+    per_image_results: Optional[Dict[str, Dict[str, float]]] = {} if store_per_image else None
+    
+    # Initialize semantic evaluator once (outside loop)
+    semantic_evaluator = None
+    if semantic_enabled:
+        from semantic_consistency import SegFormerEvaluator
+        model_name = SEGFORMER_MODEL_MAP[semantic_model]
+        logging.info("[%s] Initializing SegFormer (%s) on %s", domain_name, semantic_model, semantic_device)
+        semantic_evaluator = SegFormerEvaluator(model_name=model_name, device=semantic_device, cache_dir=cache_dir)
+    
+    # Process in chunks
+    num_chunks = (total_pairs + chunk_size - 1) // chunk_size
+    processed_pairs = 0
+    
+    for chunk_idx in tqdm(range(num_chunks), desc=f"Chunks [{domain_name}]", leave=False):
+        chunk_start = chunk_idx * chunk_size
+        chunk_end = min(chunk_start + chunk_size, total_pairs)
+        chunk_path_pairs = path_pairs[chunk_start:chunk_end]
+        
+        # Load this chunk's images
+        chunk_pairs = load_batch_pairs(chunk_path_pairs, image_size)
+        if not chunk_pairs:
+            continue
+        
+        # Process in batches within the chunk
+        for batch_start in range(0, len(chunk_pairs), batch_size):
+            batch_pairs = chunk_pairs[batch_start:batch_start + batch_size]
+            gens = torch.stack([p.gen_tensor for p in batch_pairs]).to(device, non_blocking=True)
+            originals = torch.stack([p.original_tensor for p in batch_pairs]).to(device, non_blocking=True)
+            names = [p.name for p in batch_pairs]
+            datasets = [p.dataset for p in batch_pairs]
+            
+            with torch.no_grad():
+                for m in metrics:
+                    if m.name == "fid":
+                        # FID with precomputed stats
+                        scores = m(gens, None)
+                    else:
+                        scores = m(gens, originals)
+                    
+                    for name, score, dataset in zip(names, scores, datasets):
+                        hierarchical_stats.update(m.name, float(score), dataset=dataset)
+                        if per_image_results is not None:
+                            per_image_results.setdefault(name, {})[m.name] = float(score)
+            
+            # Clear GPU memory
+            del gens, originals
+        
+        # Semantic consistency for this chunk
+        if semantic_evaluator is not None:
+            chunk_semantic_pairs = [(p.original_path, p.gen_path) for p in chunk_pairs]
+            
+            try:
+                batch_results = semantic_evaluator.evaluate_pairs_batched(
+                    chunk_semantic_pairs,
+                    batch_size=semantic_batch_size,
+                    original_cache_dirs=original_segmentation_cache_dirs,
+                    generated_cache_dir=generated_segmentation_cache,
+                )
+                
+                for pair, result in zip(chunk_pairs, batch_results):
+                    hierarchical_stats.update("semantic_pixel_accuracy", float(result.get("pixel_accuracy", 0.0)), dataset=pair.dataset)
+                    hierarchical_stats.update("semantic_mIoU", float(result.get("mIoU", 0.0)), dataset=pair.dataset)
+                    hierarchical_stats.update("semantic_fw_IoU", float(result.get("fw_IoU", 0.0)), dataset=pair.dataset)
+                    
+                    if per_image_results is not None:
+                        per_image_results.setdefault(pair.name, {}).update({
+                            "semantic_pixel_accuracy": float(result.get("pixel_accuracy", 0.0)),
+                            "semantic_mIoU": float(result.get("mIoU", 0.0)),
+                            "semantic_fw_IoU": float(result.get("fw_IoU", 0.0)),
+                        })
+            except Exception as e:
+                logging.error("[%s] Semantic evaluation failed for chunk %d: %s", domain_name, chunk_idx, e)
+        
+        processed_pairs += len(chunk_pairs)
+        
+        # Free memory
+        del chunk_pairs
+        gc.collect()
+        torch.cuda.empty_cache() if torch.cuda.is_available() else None
+        
+        logging.debug("[%s] Processed %d/%d pairs", domain_name, processed_pairs, total_pairs)
+    
+    # Build summary from hierarchical statistics
+    hierarchical_result = hierarchical_stats.to_dict()
+    
+    # "aggregate" contains domain-level summary, "per_dataset" contains breakdown
+    result: Dict[str, Any] = {
+        "domain": domain_name,
+        "generated": str(gen_dir),
+        "original": str(original_dir),
+        "num_pairs": processed_pairs,
+        "metrics": hierarchical_result["aggregate"],  # Domain-level aggregate
+        "per_dataset": hierarchical_result["per_dataset"],  # Dataset-level breakdown
+        "streaming_mode": True,
+        "chunk_size": chunk_size,
+    }
+    
+    if per_image_results is not None:
+        result["per_image"] = per_image_results
+    
+    if semantic_enabled:
+        # Build semantic summary from aggregate stats
+        agg = hierarchical_result["aggregate"]
+        result["semantic_consistency"] = {
+            "enabled": True,
+            "model_variant": semantic_model,
+            "summary": {
+                "average_pixel_accuracy": agg.get("semantic_pixel_accuracy", {}).get("mean", 0.0),
+                "average_mIoU": agg.get("semantic_mIoU", {}).get("mean", 0.0),
+                "average_fw_IoU": agg.get("semantic_fw_IoU", {}).get("mean", 0.0),
+                "num_pairs_evaluated": agg.get("semantic_pixel_accuracy", {}).get("count", 0),
+            }
+        }
+    
+    # Log per-dataset summary
+    if hierarchical_result["per_dataset"]:
+        logging.info("[%s] Per-dataset summary:", domain_name)
+        for dataset_name, ds_metrics in sorted(hierarchical_result["per_dataset"].items()):
+            count = ds_metrics.get("lpips", ds_metrics.get("ssim", {})).get("count", 0)
+            lpips_mean = ds_metrics.get("lpips", {}).get("mean", "-")
+            ssim_mean = ds_metrics.get("ssim", {}).get("mean", "-")
+            logging.info("  [%s] %d pairs - LPIPS: %.4f, SSIM: %.4f", 
+                        dataset_name, count, 
+                        lpips_mean if isinstance(lpips_mean, float) else 0,
+                        ssim_mean if isinstance(ssim_mean, float) else 0)
+    
+    # Save per-domain stats file
+    if stats_dir:
+        domain_stats_path = stats_dir / f"{domain_name}.json"
+        save_domain_stats(result, domain_stats_path)
+    
+    logging.info("[%s] Streaming evaluation complete: %d pairs processed", domain_name, processed_pairs)
+    return result
+
+
 def compute_fid_statistics(
     image_dir: Path,
     image_size: Tuple[int, int],
@@ -588,6 +962,13 @@ def parse_args() -> argparse.Namespace:
                    help="Skip precomputing LPIPS features during --precalculate.")
     p.add_argument("--cache-dir", type=Path, default=Path("/scratch/chge7185/models"),
                    help="Directory to cache downloaded models (default: /scratch/chge7185/models).")
+    p.add_argument("--streaming", action="store_true",
+                   help="Use streaming evaluation to reduce memory usage. Processes images in chunks "
+                        "without loading all into memory. Required for very large datasets (100K+ images).")
+    p.add_argument("--chunk-size", type=int, default=1000,
+                   help="Number of image pairs to process per chunk in streaming mode (default: 1000).")
+    p.add_argument("--no-per-image", action="store_true",
+                   help="Don't store per-image results in memory/output. Reduces memory significantly.")
     return p.parse_args()
 
 
@@ -653,13 +1034,16 @@ def evaluate_domain(
     fid_requested = "fid" in metric_names
 
     # Load and pair images
+    # When using CSV manifest with per-domain mode, filter by domain
+    filter_domain = domain_name if pairs_strategy == "csv" and manifest else None
     pairs = load_and_pair_images_with_paths(
         gen_dir=gen_dir,
         original_dir=original_dir,
         strategy=pairs_strategy,
         manifest=manifest,
         image_size=image_size,
-        num_workers=8
+        num_workers=8,
+        filter_domain=filter_domain,
     )
     if not pairs:
         logging.warning("[%s] No valid image pairs found; skipping domain.", domain_name)
@@ -809,6 +1193,13 @@ def main() -> None:
         semantic_device = "cuda" if torch.cuda.is_available() else "cpu"
 
     # --------------------------------------------------------------------------
+    # Auto-detect pairs strategy when manifest is provided
+    # --------------------------------------------------------------------------
+    if args.manifest and args.pairs == "auto":
+        args.pairs = "csv"
+        logging.info("Auto-detected --pairs csv due to --manifest")
+
+    # --------------------------------------------------------------------------
     # Precalculate mode: compute and store FID statistics only
     # --------------------------------------------------------------------------
     if args.precalculate:
@@ -910,40 +1301,91 @@ def main() -> None:
                 if not generated_seg_cache.exists():
                     generated_seg_cache = None
 
-            result = evaluate_domain(
-                domain_name=domain,
-                gen_dir=gen_domain_dir,
-                original_dir=original_domain_dir,
-                target_dir=target_domain_dir,
-                fid_stats_path=domain_fid_stats,
-                metric_names=list(args.metrics),
-                batch_size=args.batch_size,
-                device=device,
-                image_size=image_size,
-                pairs_strategy=args.pairs,
-                manifest=args.manifest,
-                semantic_enabled=semantic_enabled,
-                semantic_model=semantic_model,
-                semantic_device=semantic_device,
-                semantic_batch_size=args.semantic_batch_size,
-                verbose=args.verbose,
-                stats_dir=args.stats_dir,
-                cache_dir=args.cache_dir,
-                original_segmentation_cache=None,  # Use multi-dataset cache instead
-                generated_segmentation_cache=generated_seg_cache,
-                original_segmentation_cache_dirs=original_seg_cache_dirs,
-            )
+            # Choose streaming or standard evaluation
+            if args.streaming:
+                result = evaluate_domain_streaming(
+                    domain_name=domain,
+                    gen_dir=gen_domain_dir,
+                    original_dir=original_domain_dir,
+                    target_dir=target_domain_dir,
+                    fid_stats_path=domain_fid_stats,
+                    metric_names=list(args.metrics),
+                    batch_size=args.batch_size,
+                    chunk_size=args.chunk_size,
+                    device=device,
+                    image_size=image_size,
+                    pairs_strategy=args.pairs,
+                    manifest=args.manifest,
+                    semantic_enabled=semantic_enabled,
+                    semantic_model=semantic_model,
+                    semantic_device=semantic_device,
+                    semantic_batch_size=args.semantic_batch_size,
+                    verbose=args.verbose,
+                    stats_dir=args.stats_dir,
+                    cache_dir=args.cache_dir,
+                    original_segmentation_cache_dirs=original_seg_cache_dirs,
+                    generated_segmentation_cache=generated_seg_cache,
+                    store_per_image=not args.no_per_image,
+                )
+            else:
+                result = evaluate_domain(
+                    domain_name=domain,
+                    gen_dir=gen_domain_dir,
+                    original_dir=original_domain_dir,
+                    target_dir=target_domain_dir,
+                    fid_stats_path=domain_fid_stats,
+                    metric_names=list(args.metrics),
+                    batch_size=args.batch_size,
+                    device=device,
+                    image_size=image_size,
+                    pairs_strategy=args.pairs,
+                    manifest=args.manifest,
+                    semantic_enabled=semantic_enabled,
+                    semantic_model=semantic_model,
+                    semantic_device=semantic_device,
+                    semantic_batch_size=args.semantic_batch_size,
+                    verbose=args.verbose,
+                    stats_dir=args.stats_dir,
+                    cache_dir=args.cache_dir,
+                    original_segmentation_cache=None,  # Use multi-dataset cache instead
+                    generated_segmentation_cache=generated_seg_cache,
+                    original_segmentation_cache_dirs=original_seg_cache_dirs,
+                )
             all_domain_results["domains"][domain] = result
 
         # Aggregate summary across all domains
-        all_per_image: Dict[str, Dict[str, float]] = {}
-        for domain, res in all_domain_results["domains"].items():
-            if "per_image" in res:
-                for img_name, scores in res["per_image"].items():
-                    all_per_image[f"{domain}/{img_name}"] = scores
+        if args.streaming and args.no_per_image:
+            # In streaming mode without per-image results, aggregate from domain summaries
+            aggregate_stats: Dict[str, RunningStats] = {}
+            total_images = 0
+            
+            for domain, res in all_domain_results["domains"].items():
+                if "metrics" in res and "num_pairs" in res:
+                    total_images += res["num_pairs"]
+                    for metric_name, metric_data in res["metrics"].items():
+                        if metric_name not in aggregate_stats:
+                            aggregate_stats[metric_name] = RunningStats()
+                        # Weight by number of pairs in this domain
+                        stats = aggregate_stats[metric_name]
+                        # Approximate by adding the mean * count as sum
+                        for _ in range(res["num_pairs"]):
+                            stats.update(metric_data["mean"])
+            
+            all_domain_results["aggregate_metrics"] = {
+                name: stats.to_dict() for name, stats in aggregate_stats.items()
+            }
+            all_domain_results["total_images"] = total_images
+            all_domain_results["streaming_mode"] = True
+        else:
+            # Standard aggregation from per-image results
+            all_per_image: Dict[str, Dict[str, float]] = {}
+            for domain, res in all_domain_results["domains"].items():
+                if "per_image" in res:
+                    for img_name, scores in res["per_image"].items():
+                        all_per_image[f"{domain}/{img_name}"] = scores
 
-        all_domain_results["aggregate_metrics"] = summarise_metrics(all_per_image, alpha=0.95)
-        all_domain_results["total_images"] = len(all_per_image)
+            all_domain_results["aggregate_metrics"] = summarise_metrics(all_per_image, alpha=0.95)
+            all_domain_results["total_images"] = len(all_per_image)
 
         args.output.write_text(json.dumps(all_domain_results, indent=2))
         logging.info("Results written to %s", args.output)

@@ -65,7 +65,7 @@ else
 fi
 
 # Step 2: Run evaluation using the manifest
-echo "Step 2: Running evaluation..."
+echo "Step 2: Running evaluation (streaming mode for memory efficiency)..."
 python3 evaluate_generation.py \
     --generated "$GENERATED_DIR" \
     --original "$ORIGINAL_DIR" \
@@ -78,8 +78,11 @@ python3 evaluate_generation.py \
     --per-domain \
     --device auto \
     --cache-dir "$CACHE_DIR" \
-    --batch-size 64 \
-    --semantic-batch-size 16 \
+    --batch-size 32 \
+    --semantic-batch-size 8 \
+    --streaming \
+    --chunk-size 500 \
+    --no-per-image \
     --output "$OUTPUT_FILE" \
     --verbose
 

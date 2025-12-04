@@ -7,6 +7,7 @@ Handles:
 - Generated images with '_fake' suffix (e.g., 'image_fake.png' -> 'image.jpg')
 - Nested directory structures (e.g., 'domain/test_latest/images/')
 - Multiple original image directories organized by dataset/domain
+- Dataset identification from filename patterns for flat directory structures
 
 Outputs a CSV manifest for use with evaluate_generation.py --pairs csv --manifest
 """
@@ -14,12 +15,18 @@ Outputs a CSV manifest for use with evaluate_generation.py --pairs csv --manifes
 import argparse
 import csv
 import json
+import os
 import re
+import sys
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple, Set
 from collections import defaultdict
 
 from tqdm import tqdm
+
+# Add parent directory to path for imports
+sys.path.insert(0, str(Path(__file__).parent.parent))
+from utils.dataset_mapper import DatasetMapper, build_dataset_index
 
 
 # Supported image extensions
@@ -75,12 +82,14 @@ def extract_source_domain(domain_name: str) -> str:
     return domain_name
 
 
-def build_original_index(original_dir: Path, verbose: bool = False) -> Dict[str, Path]:
+def build_original_index(original_dir: Path, verbose: bool = False) -> Tuple[Dict[str, Path], Dict[str, str]]:
     """
     Build an index of original images by normalized filename.
     
     Returns:
-        Dict mapping normalized filename stem to full path
+        Tuple of:
+        - Dict mapping normalized filename stem to full path
+        - Dict mapping filename stem to dataset name
     """
     if verbose:
         print(f"Indexing original images in {original_dir}...")
@@ -92,23 +101,44 @@ def build_original_index(original_dir: Path, verbose: bool = False) -> Dict[str,
     
     # Build index by stem (without extension)
     index: Dict[str, Path] = {}
+    stem_to_dataset: Dict[str, str] = {}
     duplicates: Dict[str, List[Path]] = defaultdict(list)
+    
+    # Known datasets
+    known_datasets = {'ACDC', 'BDD100k', 'BDD10k', 'IDD-AW', 'MapillaryVistas', 'OUTSIDE15k'}
     
     for path in original_files:
         stem = path.stem
+        
+        # Extract dataset from path
+        dataset = None
+        for part in path.parts:
+            if part in known_datasets:
+                dataset = part
+                break
+        
         if stem in index:
             duplicates[stem].append(path)
             if len(duplicates[stem]) == 1:
                 duplicates[stem].insert(0, index[stem])
         else:
             index[stem] = path
+            if dataset:
+                stem_to_dataset[stem] = dataset
     
     if verbose and duplicates:
         print(f"  Warning: {len(duplicates)} filenames appear multiple times")
         for stem, paths in list(duplicates.items())[:3]:
             print(f"    '{stem}': {[str(p) for p in paths[:2]]}...")
     
-    return index
+    if verbose:
+        # Count per dataset
+        dataset_counts = defaultdict(int)
+        for ds in stem_to_dataset.values():
+            dataset_counts[ds] += 1
+        print(f"  Dataset distribution: {dict(dataset_counts)}")
+    
+    return index, stem_to_dataset
 
 
 def find_generated_images_in_domain(domain_dir: Path) -> List[Path]:
@@ -138,50 +168,131 @@ def find_generated_images_in_domain(domain_dir: Path) -> List[Path]:
     return find_image_files(domain_dir, recursive=True)
 
 
+def detect_hierarchy_type(domain_dir: Path) -> str:
+    """
+    Detect if a domain directory has dataset subfolders or flat structure.
+    
+    Returns:
+        'hierarchical' if has dataset subfolders (ACDC, BDD100k, etc.)
+        'flat' if images are directly in domain directory
+    """
+    known_datasets = {'ACDC', 'BDD100k', 'BDD10k', 'IDD-AW', 'MapillaryVistas', 'OUTSIDE15k'}
+    
+    for item in domain_dir.iterdir():
+        if item.is_dir() and item.name in known_datasets:
+            return 'hierarchical'
+    
+    return 'flat'
+
+
 def match_domain(
     domain_name: str,
     gen_domain_dir: Path,
     original_index: Dict[str, Path],
+    stem_to_dataset: Dict[str, str],
     target_dir: Optional[Path] = None,
-) -> Tuple[List[Tuple[Path, Path, str]], List[Path], Dict[str, any]]:
+    dataset_mapper: Optional[DatasetMapper] = None,
+) -> Tuple[List[Dict], List[Path], Dict]:
     """
     Match generated images to originals for a single domain.
     
+    Handles both hierarchical (with dataset subfolders) and flat structures.
+    For flat structures, uses dataset_mapper to identify dataset from filename.
+    
     Returns:
-        - List of (gen_path, original_path, name) tuples
+        - List of match dicts with gen_path, original_path, name, domain, dataset
         - List of unmatched generated paths
         - Stats dict
     """
-    gen_files = find_generated_images_in_domain(gen_domain_dir)
+    hierarchy = detect_hierarchy_type(gen_domain_dir)
     
     matched = []
     unmatched = []
+    dataset_stats = defaultdict(lambda: {"matched": 0, "unmatched": 0})
     
-    for gen_path in gen_files:
-        # Normalize the generated filename
-        normalized_stem = normalize_filename(gen_path.name)
+    if hierarchy == 'hierarchical':
+        # Process each dataset subfolder
+        known_datasets = {'ACDC', 'BDD100k', 'BDD10k', 'IDD-AW', 'MapillaryVistas', 'OUTSIDE15k'}
         
-        if normalized_stem in original_index:
-            original_path = original_index[normalized_stem]
-            matched.append((gen_path, original_path, normalized_stem))
-        else:
-            unmatched.append(gen_path)
+        for item in gen_domain_dir.iterdir():
+            if item.is_dir() and item.name in known_datasets:
+                dataset = item.name
+                gen_files = find_image_files(item, recursive=True)
+                
+                for gen_path in gen_files:
+                    normalized_stem = normalize_filename(gen_path.name)
+                    
+                    if normalized_stem in original_index:
+                        original_path = original_index[normalized_stem]
+                        matched.append({
+                            "gen_path": gen_path,
+                            "original_path": original_path,
+                            "name": normalized_stem,
+                            "dataset": dataset,
+                        })
+                        dataset_stats[dataset]["matched"] += 1
+                    else:
+                        unmatched.append(gen_path)
+                        dataset_stats[dataset]["unmatched"] += 1
+    else:
+        # Flat structure - use filename patterns to identify dataset
+        gen_files = find_generated_images_in_domain(gen_domain_dir)
+        
+        for gen_path in gen_files:
+            normalized_stem = normalize_filename(gen_path.name)
+            
+            if normalized_stem in original_index:
+                original_path = original_index[normalized_stem]
+                
+                # Determine dataset from stem_to_dataset lookup or mapper
+                dataset = stem_to_dataset.get(normalized_stem)
+                if not dataset and dataset_mapper:
+                    dataset = dataset_mapper.get_dataset(gen_path.name)
+                if not dataset:
+                    dataset = "unknown"
+                
+                matched.append({
+                    "gen_path": gen_path,
+                    "original_path": original_path,
+                    "name": normalized_stem,
+                    "dataset": dataset,
+                })
+                dataset_stats[dataset]["matched"] += 1
+            else:
+                unmatched.append(gen_path)
+                # Try to identify dataset for stats
+                dataset = None
+                if dataset_mapper:
+                    dataset = dataset_mapper.get_dataset(gen_path.name)
+                dataset = dataset or "unknown"
+                dataset_stats[dataset]["unmatched"] += 1
     
     # Compute target domain info
     target_domain = extract_target_domain(domain_name)
     source_domain = extract_source_domain(domain_name)
     target_domain_dir = target_dir / target_domain if target_dir else None
     
+    total_gen = sum(s["matched"] + s["unmatched"] for s in dataset_stats.values())
+    
     stats = {
         "domain": domain_name,
         "source_domain": source_domain,
         "target_domain": target_domain,
-        "generated_count": len(gen_files),
+        "hierarchy_type": hierarchy,
+        "generated_count": total_gen,
         "matched_count": len(matched),
         "unmatched_count": len(unmatched),
-        "match_rate": len(matched) / len(gen_files) * 100 if gen_files else 0,
+        "match_rate": len(matched) / total_gen * 100 if total_gen else 0,
         "target_dir": str(target_domain_dir) if target_domain_dir else None,
         "target_exists": target_domain_dir.exists() if target_domain_dir else False,
+        "datasets": {
+            ds: {
+                "matched": counts["matched"],
+                "unmatched": counts["unmatched"],
+                "total": counts["matched"] + counts["unmatched"],
+            }
+            for ds, counts in dataset_stats.items()
+        },
     }
     
     return matched, unmatched, stats
@@ -197,14 +308,20 @@ def create_manifest(
     """
     Create a CSV manifest mapping generated images to originals.
     
+    Includes dataset identification for each image, supporting both
+    hierarchical (with dataset subfolders) and flat directory structures.
+    
     Returns:
         Summary statistics
     """
-    # Build index of original images
-    original_index = build_original_index(original_dir, verbose=verbose)
+    # Build index of original images (now returns tuple with dataset mapping)
+    original_index, stem_to_dataset = build_original_index(original_dir, verbose=verbose)
     
     if not original_index:
         raise ValueError(f"No original images found in {original_dir}")
+    
+    # Create dataset mapper for pattern-based identification
+    dataset_mapper = DatasetMapper(original_dir)
     
     # Discover domains (subfolders) in generated directory
     domains = [d.name for d in generated_dir.iterdir() if d.is_dir()]
@@ -227,16 +344,18 @@ def create_manifest(
             gen_domain_dir = generated_dir / domain
         
         matched, unmatched, stats = match_domain(
-            domain, gen_domain_dir, original_index, target_dir
+            domain, gen_domain_dir, original_index, stem_to_dataset, 
+            target_dir, dataset_mapper
         )
         
-        # Add domain prefix to matched entries
-        for gen_path, orig_path, name in matched:
+        # Add domain info to matched entries
+        for match_info in matched:
             all_matched.append({
-                "gen_path": str(gen_path),
-                "original_path": str(orig_path),
-                "name": name,
+                "gen_path": str(match_info["gen_path"]),
+                "original_path": str(match_info["original_path"]),
+                "name": match_info["name"],
                 "domain": domain,
+                "dataset": match_info["dataset"],
                 "target_domain": stats["target_domain"],
             })
         
@@ -244,16 +363,27 @@ def create_manifest(
         domain_stats.append(stats)
         
         if verbose:
-            print(f"  {domain}: {stats['matched_count']}/{stats['generated_count']} matched "
+            print(f"  {domain} ({stats['hierarchy_type']}): {stats['matched_count']}/{stats['generated_count']} matched "
                   f"({stats['match_rate']:.1f}%)")
+            # Print dataset breakdown
+            for ds, ds_stats in stats.get("datasets", {}).items():
+                print(f"    - {ds}: {ds_stats['matched']}/{ds_stats['total']}")
     
-    # Write CSV manifest
+    # Write CSV manifest with dataset column
     output_path.parent.mkdir(parents=True, exist_ok=True)
     
     with open(output_path, 'w', newline='') as f:
-        writer = csv.DictWriter(f, fieldnames=["gen_path", "original_path", "name", "domain", "target_domain"])
+        writer = csv.DictWriter(f, fieldnames=["gen_path", "original_path", "name", "domain", "dataset", "target_domain"])
         writer.writeheader()
         writer.writerows(all_matched)
+    
+    # Aggregate dataset statistics across all domains
+    aggregate_datasets = defaultdict(lambda: {"matched": 0, "unmatched": 0, "total": 0})
+    for stats in domain_stats:
+        for ds, ds_stats in stats.get("datasets", {}).items():
+            aggregate_datasets[ds]["matched"] += ds_stats["matched"]
+            aggregate_datasets[ds]["unmatched"] += ds_stats["unmatched"]
+            aggregate_datasets[ds]["total"] += ds_stats["total"]
     
     # Write summary JSON
     summary = {
@@ -266,6 +396,7 @@ def create_manifest(
         "total_unmatched": len(all_unmatched),
         "overall_match_rate": len(all_matched) / sum(s["generated_count"] for s in domain_stats) * 100 
                               if domain_stats else 0,
+        "datasets_aggregate": dict(aggregate_datasets),
         "domains": domain_stats,
     }
     
@@ -279,6 +410,9 @@ def create_manifest(
         print(f"Total matched: {summary['total_matched']}")
         print(f"Total unmatched: {summary['total_unmatched']}")
         print(f"Overall match rate: {summary['overall_match_rate']:.1f}%")
+        print(f"\nDataset breakdown:")
+        for ds, ds_stats in aggregate_datasets.items():
+            print(f"  {ds}: {ds_stats['matched']}/{ds_stats['total']} matched")
         print(f"\nManifest written to: {output_path}")
         print(f"Summary written to: {summary_path}")
     

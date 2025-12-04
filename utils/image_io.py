@@ -92,11 +92,14 @@ def match_by_filename(gen_files: List[Path], original_files: List[Path]) -> List
     return pairs
 
 
-def load_pairs_from_csv(manifest_path: Path) -> List[Tuple[Path, Path, str]]:
+def load_pairs_from_csv(manifest_path: Path) -> List[Tuple[Path, Path, str, Optional[str], Optional[str]]]:
     """
     Load image pairs from CSV manifest.
 
-    CSV format: gen_path,original_path
+    CSV format: gen_path,original_path,name,domain,dataset,target_domain
+    
+    Returns:
+        List of (gen_path, original_path, name, domain, dataset) tuples
     """
     pairs = []
     with open(manifest_path, 'r') as f:
@@ -104,7 +107,9 @@ def load_pairs_from_csv(manifest_path: Path) -> List[Tuple[Path, Path, str]]:
         for i, row in enumerate(reader):
             gen_path = Path(row['gen_path'])
             original_path = Path(row['original_path'])
-            name = f"pair_{i:04d}"
+            name = row.get('name', f"pair_{i:04d}")
+            domain = row.get('domain')
+            dataset = row.get('dataset')
 
             if not gen_path.exists():
                 logging.warning(f"Generated image not found: {gen_path}")
@@ -113,33 +118,54 @@ def load_pairs_from_csv(manifest_path: Path) -> List[Tuple[Path, Path, str]]:
                 logging.warning(f"Original image not found: {original_path}")
                 continue
 
-            pairs.append((gen_path, original_path, name))
+            pairs.append((gen_path, original_path, name, domain, dataset))
 
     return pairs
 
 
 @dataclass
 class LoadedImagePair:
-    """Container for paired tensors plus their source paths."""
+    """Container for paired tensors plus their source paths and metadata."""
 
     gen_tensor: torch.Tensor
     original_tensor: torch.Tensor
     name: str
     gen_path: Path
     original_path: Path
+    domain: Optional[str] = None
+    dataset: Optional[str] = None
 
 
 def pair_image_paths(
     gen_dir: Path,
     original_dir: Path,
     strategy: str = "auto",
-    manifest: Optional[Path] = None
-) -> List[Tuple[Path, Path, str]]:
-    """Return matched generated/original image paths without loading pixels."""
+    manifest: Optional[Path] = None,
+    filter_domain: Optional[str] = None,
+) -> List[Tuple[Path, Path, str, Optional[str], Optional[str]]]:
+    """Return matched generated/original image paths without loading pixels.
+    
+    Args:
+        gen_dir: Directory containing generated images (used for non-CSV strategies)
+        original_dir: Directory containing original images (used for non-CSV strategies)
+        strategy: Pairing strategy ("auto", "csv")
+        manifest: Path to CSV manifest (required if strategy="csv")
+        filter_domain: If set, only return pairs matching this domain (for CSV strategy)
+    
+    Returns:
+        List of (gen_path, original_path, name, domain, dataset) tuples.
+        For non-CSV strategy, domain and dataset are None.
+    """
     if strategy == "csv":
         if not manifest:
             raise ValueError("Manifest file required for CSV pairing strategy")
-        return load_pairs_from_csv(manifest)
+        pairs = load_pairs_from_csv(manifest)
+        
+        # Filter by domain if requested
+        if filter_domain:
+            pairs = [p for p in pairs if p[3] == filter_domain]
+        
+        return pairs
 
     gen_files = find_image_files(gen_dir)
     original_files = find_image_files(original_dir)
@@ -149,22 +175,24 @@ def pair_image_paths(
     if not original_files:
         raise ValueError(f"No images found in original directory: {original_dir}")
 
-    return match_by_filename(gen_files, original_files)
+    # match_by_filename returns (gen_path, original_path, name) - add None for domain/dataset
+    basic_pairs = match_by_filename(gen_files, original_files)
+    return [(g, o, n, None, None) for g, o, n in basic_pairs]
 
 
 def _load_single_pair(
-    args: Tuple[Path, Path, str, Tuple[int, int]]
+    args: Tuple[Path, Path, str, Tuple[int, int], Optional[str], Optional[str]]
 ) -> Optional[LoadedImagePair]:
     """
     Load a single image pair. Used for parallel loading.
     
     Args:
-        args: Tuple of (gen_path, original_path, name, image_size)
+        args: Tuple of (gen_path, original_path, name, image_size, domain, dataset)
     
     Returns:
         LoadedImagePair or None if loading failed
     """
-    gen_path, original_path, name, image_size = args
+    gen_path, original_path, name, image_size, domain, dataset = args
     try:
         gen_tensor = load_image(gen_path, image_size)
         original_tensor = load_image(original_path, image_size)
@@ -174,6 +202,8 @@ def _load_single_pair(
             name=name,
             gen_path=gen_path,
             original_path=original_path,
+            domain=domain,
+            dataset=dataset,
         )
     except Exception as e:
         logging.error(f"Failed to load pair {name}: {e}")
@@ -187,6 +217,7 @@ def load_and_pair_images_with_paths(
     manifest: Optional[Path] = None,
     image_size: Tuple[int, int] = (299, 299),
     num_workers: int = 0,
+    filter_domain: Optional[str] = None,
 ) -> List[LoadedImagePair]:
     """
     Load paired images and keep track of their originating file paths.
@@ -199,11 +230,12 @@ def load_and_pair_images_with_paths(
         image_size: Target size (height, width) for loaded images
         num_workers: Number of parallel workers for loading.
             0 = sequential (default), >0 = use ThreadPoolExecutor
+        filter_domain: If set, only load pairs matching this domain (for CSV strategy)
     
     Returns:
-        List of LoadedImagePair objects
+        List of LoadedImagePair objects (includes domain/dataset if from CSV manifest)
     """
-    path_pairs = pair_image_paths(gen_dir, original_dir, strategy=strategy, manifest=manifest)
+    path_pairs = pair_image_paths(gen_dir, original_dir, strategy=strategy, manifest=manifest, filter_domain=filter_domain)
 
     if not path_pairs:
         return []
@@ -215,8 +247,8 @@ def load_and_pair_images_with_paths(
     if num_workers > 0:
         # Parallel loading using ThreadPoolExecutor
         # Image I/O is I/O-bound, so threading works well
-        load_args = [(gen_path, orig_path, name, image_size) 
-                     for gen_path, orig_path, name in path_pairs]
+        load_args = [(gen_path, orig_path, name, image_size, domain, dataset) 
+                     for gen_path, orig_path, name, domain, dataset in path_pairs]
         
         with ThreadPoolExecutor(max_workers=num_workers) as executor:
             # Submit all tasks
@@ -242,7 +274,7 @@ def load_and_pair_images_with_paths(
             start=1,
         )
 
-        for i, (gen_path, original_path, name) in iterator:
+        for i, (gen_path, original_path, name, domain, dataset) in iterator:
             try:
                 gen_tensor = load_image(gen_path, image_size)
                 original_tensor = load_image(original_path, image_size)
@@ -253,6 +285,8 @@ def load_and_pair_images_with_paths(
                         name=name,
                         gen_path=gen_path,
                         original_path=original_path,
+                        domain=domain,
+                        dataset=dataset,
                     )
                 )
             except Exception as e:
