@@ -28,7 +28,18 @@ MANIFEST_FILE="${GENERATED_DIR}/manifest.csv"
 OUTPUT_FILE="evaluation_results.json"
 
 # Cache directory for models
-CACHE_DIR="/scratch/chge7185/models"
+# Insert user name and use it for cache dir
+# Determine user name from the environment or system (handles sudo)
+if [ -n "$SUDO_USER" ]; then
+    USER_NAME="$SUDO_USER"
+elif [ -n "$USER" ]; then
+    USER_NAME="$USER"
+else
+    USER_NAME="$(id -un 2>/dev/null || whoami 2>/dev/null || echo 'unknown')"
+fi
+
+CACHE_DIR="/scratch/${USER_NAME}/models"
+mkdir -p "$CACHE_DIR" 2>/dev/null || echo "Warning: Could not create cache dir: $CACHE_DIR"
 
 echo "========================================="
 echo "Evaluation Pipeline"
