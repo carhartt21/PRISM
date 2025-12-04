@@ -17,4 +17,4 @@ class Metric:
         with torch.no_grad():
             scores = self.metric(x_normalized, y_normalized)
         
-        return scores.squeeze()
+        return scores.view(-1)
