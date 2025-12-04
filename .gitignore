@@ -144,3 +144,4 @@ local.env
 results/
 colored_labels*/
 cache/
+stats/
