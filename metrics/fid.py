@@ -48,13 +48,15 @@ class Metric:
             if "More than one sample is required" in str(e):
                 # Return NaN if FID computation fails due to insufficient samples
                 self.metric.reset()
-                return torch.full((x.size(0),), float('nan'), device=x.device)
+                return torch.full((x.size(0),), float('nan'), device=self.device)
             raise
         
         self.metric.reset()
 
         # Return FID score for each image in batch (FID is a global metric)
-        return fid.expand(x.size(0))
+        # Use repeat to ensure we always get a 1-D tensor
+        batch_size = x.size(0)
+        return fid.view(1).repeat(batch_size)
 
     def _apply_reference_stats(self, stats: Dict[str, Any]) -> None:
         if "mu" not in stats or "sigma" not in stats:
