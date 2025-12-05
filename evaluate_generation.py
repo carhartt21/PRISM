@@ -541,15 +541,24 @@ def evaluate_domain_streaming(
         metric_names = [m for m in metric_names if m != "fid"]
         fid_requested = False
     
-    # Build metrics
+    # Build metrics - separate FID from per-image metrics
     fid_plugin_options = {"reference_stats": fid_reference_stats} if fid_reference_stats else None
-    metrics = build_metric_plugins(metric_names, device=device, fid_options=fid_plugin_options)
-    if not metrics:
+    all_metrics = build_metric_plugins(metric_names, device=device, fid_options=fid_plugin_options)
+    if not all_metrics:
         logging.warning("[%s] No valid metrics; skipping domain.", domain_name)
         return {"domain": domain_name, "error": "No valid metrics"}
     
+    # Separate FID (distributional) from per-image metrics
+    fid_metric = None
+    per_image_metrics = []
+    for m in all_metrics:
+        if m.name == "fid":
+            fid_metric = m
+        else:
+            per_image_metrics.append(m)
+    
     # Initialize hierarchical statistics tracker (domain-level + per-dataset)
-    metric_names_list = [m.name for m in metrics]
+    metric_names_list = [m.name for m in all_metrics]
     hierarchical_stats = HierarchicalStats(metric_names_list, semantic_enabled=semantic_enabled)
     
     # Count unique datasets for logging
@@ -594,12 +603,13 @@ def evaluate_domain_streaming(
             datasets = [p.dataset for p in batch_pairs]
             
             with torch.no_grad():
-                for m in metrics:
-                    if m.name == "fid":
-                        # FID with precomputed stats
-                        scores = m(gens, None)
-                    else:
-                        scores = m(gens, originals)
+                # Accumulate FID features (no per-image scores)
+                if fid_metric is not None:
+                    fid_metric.update(gens, None)
+                
+                # Compute per-image metrics
+                for m in per_image_metrics:
+                    scores = m(gens, originals)
                     
                     for name, score, dataset in zip(names, scores, datasets):
                         hierarchical_stats.update(m.name, float(score), dataset=dataset)
@@ -644,8 +654,23 @@ def evaluate_domain_streaming(
         
         logging.debug("[%s] Processed %d/%d pairs", domain_name, processed_pairs, total_pairs)
     
+    # Compute final FID score after all batches are processed
+    fid_score = None
+    if fid_metric is not None:
+        fid_score = fid_metric.compute()
+        logging.info("[%s] FID score: %.4f (computed over %d images)", domain_name, fid_score, processed_pairs)
+        fid_metric.reset()
+    
     # Build summary from hierarchical statistics
     hierarchical_result = hierarchical_stats.to_dict()
+    
+    # Add FID as a single domain-level metric (not per-image)
+    if fid_score is not None and not np.isnan(fid_score):
+        hierarchical_result["aggregate"]["fid"] = {
+            "count": processed_pairs,
+            "value": fid_score,
+            "note": "FID is a distributional metric computed over all images"
+        }
     
     # "aggregate" contains domain-level summary, "per_dataset" contains breakdown
     result: Dict[str, Any] = {
@@ -688,13 +713,22 @@ def evaluate_domain_streaming(
                         lpips_mean if isinstance(lpips_mean, float) else 0,
                         ssim_mean if isinstance(ssim_mean, float) else 0)
     
-    # Save per-domain stats file
+    # Save per-domain stats file (includes per-image details if available)
     if stats_dir:
-        domain_stats_path = stats_dir / f"{domain_name}.json"
+        domain_stats_path = stats_dir / f"{domain_name}_stats.json"
         save_domain_stats(result, domain_stats_path)
+        
+        # Save per-image results separately if available (high memory data)
+        if per_image_results:
+            per_image_path = stats_dir / f"{domain_name}_per_image.json"
+            per_image_path.write_text(json.dumps(per_image_results, indent=2))
+            logging.info("[%s] Per-image results saved to %s", domain_name, per_image_path)
+    
+    # Remove per_image from result to reduce main output size
+    result_summary = {k: v for k, v in result.items() if k != "per_image"}
     
     logging.info("[%s] Streaming evaluation complete: %d pairs processed", domain_name, processed_pairs)
-    return result
+    return result_summary
 
 
 def compute_fid_statistics(
@@ -1056,12 +1090,21 @@ def evaluate_domain(
         return {"domain": domain_name, "error": "No valid image pairs found"}
     logging.info("[%s] Found %d paired images", domain_name, len(pairs))
 
-    # Build metrics
+    # Build metrics - separate FID from per-image metrics
     fid_plugin_options = {"reference_stats": fid_reference_stats} if fid_reference_stats else None
-    metrics = build_metric_plugins(metric_names, device=device, fid_options=fid_plugin_options)
-    if not metrics:
+    all_metrics = build_metric_plugins(metric_names, device=device, fid_options=fid_plugin_options)
+    if not all_metrics:
         logging.warning("[%s] No valid metrics; skipping domain.", domain_name)
         return {"domain": domain_name, "error": "No valid metrics"}
+
+    # Separate FID (distributional) from per-image metrics
+    fid_metric = None
+    per_image_metrics = []
+    for m in all_metrics:
+        if m.name == "fid":
+            fid_metric = m
+        else:
+            per_image_metrics.append(m)
 
     fid_target_iterator: Optional[Iterator[torch.Tensor]] = None
     if fid_requested and fid_reference_stats is None and fid_target_tensors:
@@ -1081,18 +1124,26 @@ def evaluate_domain(
         names = [p.name for p in batch_pairs]
 
         with torch.no_grad():
-            for m in metrics:
-                if m.name == "fid":
-                    target_batch = None
-                    if fid_reference_stats is None:
-                        if fid_target_iterator is None:
-                            continue
+            # Accumulate FID features (no per-image scores)
+            if fid_metric is not None:
+                target_batch = None
+                if fid_reference_stats is None:
+                    if fid_target_iterator is not None:
                         target_batch = next(fid_target_iterator).to(device, non_blocking=True)
-                    scores = m(gens, target_batch)
-                else:
-                    scores = m(gens, originals)
+                fid_metric.update(gens, target_batch)
+            
+            # Compute per-image metrics
+            for m in per_image_metrics:
+                scores = m(gens, originals)
                 for n, s in zip(names, scores):
                     per_image_results.setdefault(n, {})[m.name] = float(s)
+    
+    # Compute final FID score after all batches
+    fid_score = None
+    if fid_metric is not None:
+        fid_score = fid_metric.compute()
+        logging.info("[%s] FID score: %.4f (computed over %d images)", domain_name, fid_score, len(pairs))
+        fid_metric.reset()
 
     # Semantic consistency evaluation
     semantic_payload: Optional[Dict[str, Any]] = None
@@ -1124,6 +1175,14 @@ def evaluate_domain(
 
     # Summary
     summary = summarise_metrics(per_image_results, alpha=0.95)
+    
+    # Add FID as a single domain-level metric (not per-image)
+    if fid_score is not None and not np.isnan(fid_score):
+        summary["fid"] = {
+            "count": len(pairs),
+            "value": fid_score,
+            "note": "FID is a distributional metric computed over all images"
+        }
 
     result: Dict[str, Any] = {
         "domain": domain_name,
@@ -1131,16 +1190,21 @@ def evaluate_domain(
         "original": str(original_dir),
         "num_pairs": len(pairs),
         "metrics": summary,
-        "per_image": per_image_results,
     }
 
     if semantic_payload and semantic_payload["metadata"].get("enabled"):
         result["semantic_consistency"] = semantic_payload["metadata"]
 
-    # Save per-domain stats file
+    # Save per-domain stats file (includes per-image details)
     if stats_dir:
-        domain_stats_path = stats_dir / f"{domain_name}.json"
-        save_domain_stats(result, domain_stats_path)
+        domain_stats_path = stats_dir / f"{domain_name}_stats.json"
+        full_result = {**result, "per_image": per_image_results}
+        save_domain_stats(full_result, domain_stats_path)
+        
+        # Save per-image results separately
+        per_image_path = stats_dir / f"{domain_name}_per_image.json"
+        per_image_path.write_text(json.dumps(per_image_results, indent=2))
+        logging.info("[%s] Per-image results saved to %s", domain_name, per_image_path)
 
     return result
 
@@ -1383,15 +1447,39 @@ def main() -> None:
             all_domain_results["total_images"] = total_images
             all_domain_results["streaming_mode"] = True
         else:
-            # Standard aggregation from per-image results
-            all_per_image: Dict[str, Dict[str, float]] = {}
+            # Aggregate from domain-level summaries (per-image results saved to stats-dir)
+            aggregate_stats: Dict[str, RunningStats] = {}
+            total_images = 0
+            fid_scores: Dict[str, float] = {}
+            
             for domain, res in all_domain_results["domains"].items():
-                if "per_image" in res:
-                    for img_name, scores in res["per_image"].items():
-                        all_per_image[f"{domain}/{img_name}"] = scores
-
-            all_domain_results["aggregate_metrics"] = summarise_metrics(all_per_image, alpha=0.95)
-            all_domain_results["total_images"] = len(all_per_image)
+                if "metrics" in res and "num_pairs" in res:
+                    total_images += res["num_pairs"]
+                    for metric_name, metric_data in res["metrics"].items():
+                        if metric_name == "fid":
+                            # FID is already a single score per domain
+                            if "value" in metric_data:
+                                fid_scores[domain] = metric_data["value"]
+                            continue
+                        if metric_name not in aggregate_stats:
+                            aggregate_stats[metric_name] = RunningStats()
+                        stats = aggregate_stats[metric_name]
+                        # Use count and mean from domain summary
+                        count = metric_data.get("count", res["num_pairs"])
+                        mean = metric_data.get("mean", 0)
+                        for _ in range(count):
+                            stats.update(mean)
+            
+            all_domain_results["aggregate_metrics"] = {
+                name: stats.to_dict() for name, stats in aggregate_stats.items()
+            }
+            # Add FID scores per domain
+            if fid_scores:
+                all_domain_results["aggregate_metrics"]["fid"] = {
+                    "per_domain": fid_scores,
+                    "note": "FID is computed per domain, not aggregated"
+                }
+            all_domain_results["total_images"] = total_images
 
         args.output.write_text(json.dumps(all_domain_results, indent=2))
         logging.info("Results written to %s", args.output)
@@ -1435,12 +1523,21 @@ def main() -> None:
             sys.exit(1)
         logging.info("Found %d paired images", len(pairs))
 
-        # Dynamically instantiate metrics
+        # Dynamically instantiate metrics - separate FID from per-image metrics
         fid_plugin_options = {"reference_stats": fid_reference_stats} if fid_reference_stats else None
-        metrics = build_metric_plugins(args.metrics, device=device, fid_options=fid_plugin_options)
-        if not metrics:
+        all_metrics = build_metric_plugins(args.metrics, device=device, fid_options=fid_plugin_options)
+        if not all_metrics:
             logging.error("No valid metrics requested (%s).", args.metrics)
             sys.exit(1)
+        
+        # Separate FID (distributional) from per-image metrics
+        fid_metric = None
+        per_image_metrics = []
+        for m in all_metrics:
+            if m.name == "fid":
+                fid_metric = m
+            else:
+                per_image_metrics.append(m)
 
         fid_target_iterator: Optional[Iterator[torch.Tensor]] = None
         if fid_requested and fid_reference_stats is None:
@@ -1459,18 +1556,26 @@ def main() -> None:
             names = [p.name for p in batch_pairs]
 
             with torch.no_grad():
-                for m in metrics:
-                    if m.name == "fid":
-                        target_batch = None
-                        if fid_reference_stats is None:
-                            if fid_target_iterator is None:
-                                raise RuntimeError("FID target iterator not initialized")
+                # Accumulate FID features (no per-image scores)
+                if fid_metric is not None:
+                    target_batch = None
+                    if fid_reference_stats is None:
+                        if fid_target_iterator is not None:
                             target_batch = next(fid_target_iterator).to(device, non_blocking=True)
-                        scores = m(gens, target_batch)
-                    else:
-                        scores = m(gens, originals)
+                    fid_metric.update(gens, target_batch)
+                
+                # Compute per-image metrics
+                for m in per_image_metrics:
+                    scores = m(gens, originals)
                     for n, s in zip(names, scores):
                         per_image_results.setdefault(n, {})[m.name] = float(s)
+        
+        # Compute final FID score after all batches
+        fid_score = None
+        if fid_metric is not None:
+            fid_score = fid_metric.compute()
+            logging.info("FID score: %.4f (computed over %d images)", fid_score, len(pairs))
+            fid_metric.reset()
 
         # Semantic consistency evaluation
         semantic_payload: Optional[Dict[str, Any]] = None
@@ -1524,14 +1629,21 @@ def main() -> None:
 
         # Statistical summaries
         summary = summarise_metrics(per_image_results, alpha=0.95)
+        
+        # Add FID as a single domain-level metric (not per-image)
+        if fid_score is not None and not np.isnan(fid_score):
+            summary["fid"] = {
+                "count": len(pairs),
+                "value": fid_score,
+                "note": "FID is a distributional metric computed over all images"
+            }
 
-        # Serialize results
+        # Serialize results (without per-image for main output)
         out = {
             "timestamp": time.strftime("%Y-%m-%dT%H:%M:%S"),
             "generated": str(args.generated),
             "original": str(args.original),
             "metrics": summary,
-            "per_image": per_image_results,
         }
 
         if semantic_payload and semantic_payload["metadata"].get("enabled"):
@@ -1539,6 +1651,19 @@ def main() -> None:
 
         args.output.write_text(json.dumps(out, indent=2))
         logging.info("Results written to %s", args.output)
+        
+        # Save per-image details to stats-dir if provided
+        if args.stats_dir:
+            args.stats_dir.mkdir(parents=True, exist_ok=True)
+            per_image_path = args.stats_dir / "per_image_results.json"
+            per_image_path.write_text(json.dumps(per_image_results, indent=2))
+            logging.info("Per-image results saved to %s", per_image_path)
+            
+            # Also save full results with per-image to stats-dir
+            full_out = {**out, "per_image": per_image_results}
+            full_results_path = args.stats_dir / "full_results.json"
+            full_results_path.write_text(json.dumps(full_out, indent=2))
+            logging.info("Full results with per-image data saved to %s", full_results_path)
 
 
 if __name__ == "__main__":

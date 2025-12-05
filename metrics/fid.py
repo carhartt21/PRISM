@@ -20,43 +20,80 @@ class Metric:
         self.metric.to(device)
         self.device = device
         self.uses_reference_stats = reference_stats is not None
+        self._num_fake_samples = 0
         if self.uses_reference_stats and reference_stats:
             self._apply_reference_stats(reference_stats)
 
-    def __call__(self, x: torch.Tensor, y: Optional[torch.Tensor]) -> torch.Tensor:
-        # FID requires at least 2 samples to compute distribution statistics
-        if x.size(0) < 2:
-            # Return NaN for batches too small to compute FID
-            return torch.full((x.size(0),), float('nan'), device=x.device)
+    def update(self, x: torch.Tensor, y: Optional[torch.Tensor] = None) -> None:
+        """
+        Accumulate features from a batch of images.
         
+        FID is a distributional metric - call update() for each batch,
+        then compute() once at the end for the final score.
+        
+        Args:
+            x: Generated/fake images (B, C, H, W) in [0, 1] range
+            y: Real images (B, C, H, W) in [0, 1] range (only needed if no reference_stats)
+        """
         # Ensure images are in [0, 255] range and uint8 for FID
         x_uint8 = (x * 255).clamp(0, 255).to(torch.uint8)
+        
         if not self.uses_reference_stats:
             if y is None:
                 raise ValueError("FID metric requires target-domain images or reference stats")
-            if y.size(0) < 2:
-                # Return NaN if target batch is too small
-                return torch.full((x.size(0),), float('nan'), device=x.device)
             y_uint8 = (y * 255).clamp(0, 255).to(torch.uint8)
             self.metric.update(y_uint8, real=True)
-
+        
         self.metric.update(x_uint8, real=False)
+        self._num_fake_samples += x.size(0)
+
+    def compute(self) -> float:
+        """
+        Compute the final FID score after all batches have been processed.
+        
+        Returns:
+            FID score as a single float value
+        """
+        if self._num_fake_samples < 2:
+            return float('nan')
         
         try:
             fid = self.metric.compute()
+            return float(fid.item())
         except RuntimeError as e:
             if "More than one sample is required" in str(e):
-                # Return NaN if FID computation fails due to insufficient samples
-                self.metric.reset()
-                return torch.full((x.size(0),), float('nan'), device=self.device)
+                return float('nan')
             raise
-        
-        self.metric.reset()
 
-        # Return FID score for each image in batch (FID is a global metric)
-        # Use repeat to ensure we always get a 1-D tensor
+    def reset(self) -> None:
+        """Reset the metric for a new evaluation."""
+        self.metric.reset()
+        self._num_fake_samples = 0
+        # Re-apply reference stats if using precomputed stats
+        if self.uses_reference_stats:
+            # The metric was initialized with reset_real_features=False,
+            # so real features are preserved across resets
+            pass
+
+    def __call__(self, x: torch.Tensor, y: Optional[torch.Tensor]) -> torch.Tensor:
+        """
+        Legacy per-batch interface (deprecated for FID).
+        
+        For proper FID computation, use update() for each batch, 
+        then compute() once at the end.
+        
+        This method is kept for backward compatibility but will compute
+        FID on just this batch, which is not statistically meaningful.
+        """
+        # For backward compatibility, update and immediately compute
+        # This is NOT the recommended usage for FID
+        self.update(x, y)
+        fid_score = self.compute()
+        self.reset()
+        
+        # Return FID score for each image in batch (same value repeated)
         batch_size = x.size(0)
-        return fid.view(1).repeat(batch_size)
+        return torch.full((batch_size,), fid_score, device=self.device)
 
     def _apply_reference_stats(self, stats: Dict[str, Any]) -> None:
         if "mu" not in stats or "sigma" not in stats:
