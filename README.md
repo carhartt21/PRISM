@@ -469,3 +469,24 @@ If you use PRISM in your research, please cite:
 - Built with PyTorch and TorchMetrics
 - LPIPS implementation from [richzhang/PerceptualSimilarity](https://github.com/richzhang/PerceptualSimilarity)
 - FID implementation based on [mseitzer/pytorch-fid](https://github.com/mseitzer/pytorch-fid)
+
+### Summarizing Results
+
+The `summarize_results.py` script is used to aggregate and analyze evaluation results, including calculating a Composite Quality Score (CQS) for ranking models. It supports multiple output formats such as JSON, Markdown, and CSV.
+
+#### Usage
+
+```bash
+python summarize_results.py \
+  --input ./path/to/evaluation_results.json \
+  --output-json summary.json \
+  --output-md summary.md \
+  --output-csv summary.csv
+```
+
+#### Features
+- **Input**: Accepts JSON files containing evaluation results.
+- **Output**: Generates summaries in JSON, Markdown, and CSV formats.
+- **Composite Quality Score (CQS)**: Calculates a normalized score to rank models based on multiple metrics.
+
+This script is particularly useful for comparing the performance of different models or configurations in a standardized way.
