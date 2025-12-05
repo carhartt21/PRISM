@@ -12,7 +12,7 @@
 # Generated: The generated/translated images to evaluate
 GENERATED_ROOT_DIR="/scratch/aaa_exchange/AWARE/GENERATED_IMAGES"
 
-MODEL="cycleGAN"
+MODEL="CUT"
 
 GENERATED_DIR="${GENERATED_ROOT_DIR}/${MODEL}"
 
@@ -26,7 +26,7 @@ TARGET_DIR="/scratch/aaa_exchange/AWARE/AWACS/train"
 STATS_DIR="/scratch/aaa_exchange/AWARE/STATS/${MODEL}_stats"
 
 # Manifest file (created by preprocessing step)
-MANIFEST_FILE="${GENERATED_DIR}/manifest.csv"
+MANIFEST_FILE="manifests/${MODEL}/manifest.csv"
 
 # Output file for evaluation results
 OUTPUT_FILE="${MODEL}_evaluation_results.json"
