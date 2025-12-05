@@ -15,6 +15,9 @@ The script handles various directory structures:
 - dataset/domain hierarchy (e.g., ACDC/foggy/)
 - translation naming (e.g., sunny_day2foggy, clear_day2fog)
 - restoration naming (e.g., derained, desnowed)
+
+Domain mappings are stored in configs/domain_mapping.json and can be updated
+automatically when new mappings are resolved.
 """
 
 import argparse
@@ -27,6 +30,7 @@ from pathlib import Path
 from typing import Dict, List, Optional, Tuple, Set
 from collections import defaultdict
 from dataclasses import dataclass, field
+from datetime import datetime
 from tqdm import tqdm
 
 # Add parent directory to path for imports - import dataset_mapper directly
@@ -42,186 +46,251 @@ dataset_mapper_module = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(dataset_mapper_module)
 DatasetMapper = dataset_mapper_module.DatasetMapper
 
+
 # =============================================================================
 # Domain Mapping Configuration
 # =============================================================================
 
-# Canonical domain names for GENERATION tasks (clear -> adverse)
-CANONICAL_GENERATION_DOMAINS = {"snowy", "rainy", "foggy", "night", "cloudy", "dawn_dusk"}
+# Default path for domain mapping configuration
+DEFAULT_MAPPING_CONFIG = Path(__file__).parent.parent / "configs" / "domain_mapping.json"
 
-# Canonical domain names for RESTORATION tasks (adverse -> clear)
-CANONICAL_RESTORATION_DOMAINS = {"derained", "dehazed", "desnowed", "night2day"}
 
-# All canonical domains
-CANONICAL_DOMAINS = CANONICAL_GENERATION_DOMAINS | CANONICAL_RESTORATION_DOMAINS
+class DomainMappingConfig:
+    """
+    Manages domain mapping configuration with file persistence.
+    
+    Loads mappings from a JSON file and can update the file when new
+    mappings are discovered and resolved.
+    """
+    
+    def __init__(self, config_path: Optional[Path] = None):
+        self.config_path = config_path or DEFAULT_MAPPING_CONFIG
+        self._load_config()
+        self._new_mappings: Dict[str, str] = {}
+        self._unresolved: Set[str] = set()
+    
+    def _load_config(self) -> None:
+        """Load configuration from JSON file or use defaults."""
+        if self.config_path.exists():
+            with open(self.config_path) as f:
+                config = json.load(f)
+            
+            self.canonical_generation_domains = set(config.get("canonical_generation_domains", []))
+            self.canonical_restoration_domains = set(config.get("canonical_restoration_domains", []))
+            self.restoration_source_mapping = config.get("restoration_source_mapping", {})
+            self.domain_mapping = config.get("domain_mapping", {})
+            self.known_datasets = set(config.get("known_datasets", []))
+            self.supported_extensions = tuple(config.get("supported_extensions", [".png", ".jpg", ".jpeg", ".webp"]))
+            self._unresolved = set(config.get("unresolved_domains", []))
+        else:
+            # Use hardcoded defaults if config file doesn't exist
+            self._use_defaults()
+    
+    def _use_defaults(self) -> None:
+        """Set default configuration values."""
+        self.canonical_generation_domains = {"snowy", "rainy", "foggy", "night", "cloudy", "dawn_dusk"}
+        self.canonical_restoration_domains = {"derained", "dehazed", "desnowed", "night2day"}
+        self.restoration_source_mapping = {
+            "derained": "rainy",
+            "dehazed": "foggy",
+            "desnowed": "snowy",
+            "night2day": "night",
+        }
+        self.domain_mapping = {}
+        self.known_datasets = {'ACDC', 'BDD100k', 'BDD10k', 'IDD-AW', 'MapillaryVistas', 'OUTSIDE15k'}
+        self.supported_extensions = ('.png', '.jpg', '.jpeg', '.webp')
+    
+    @property
+    def canonical_domains(self) -> Set[str]:
+        """All canonical domain names."""
+        return self.canonical_generation_domains | self.canonical_restoration_domains
+    
+    def normalize_domain(self, domain_name: str) -> Optional[str]:
+        """
+        Map a domain name to its canonical form.
+        
+        Returns None if the domain is not recognized.
+        """
+        # Direct lookup
+        if domain_name in self.domain_mapping:
+            return self.domain_mapping[domain_name]
+        
+        # Try lowercase
+        lower = domain_name.lower()
+        if lower in self.domain_mapping:
+            return self.domain_mapping[lower]
+        
+        # Try extracting target from translation pattern (e.g., "sunny_day2foggy")
+        if '2' in domain_name:
+            parts = domain_name.split('2', 1)
+            if len(parts) > 1:
+                target = parts[1]
+                if target in self.domain_mapping:
+                    return self.domain_mapping[target]
+                if target.lower() in self.domain_mapping:
+                    return self.domain_mapping[target.lower()]
+                # Check if target is already canonical
+                if target in self.canonical_domains:
+                    return target
+                if target.lower() in self.canonical_domains:
+                    return target.lower()
+        
+        # Check if it's already a canonical domain
+        if domain_name in self.canonical_domains:
+            return domain_name
+        if domain_name.lower() in self.canonical_domains:
+            return domain_name.lower()
+        
+        return None
+    
+    def is_restoration_domain(self, canonical_domain: str) -> bool:
+        """Check if a canonical domain is a restoration task."""
+        return canonical_domain in self.canonical_restoration_domains
+    
+    def get_restoration_source_domain(self, canonical_domain: str) -> Optional[str]:
+        """
+        Get the source weather domain for a restoration task.
+        
+        For restoration tasks, the input images come from adverse weather conditions.
+        E.g., 'derained' takes 'rainy' images as input.
+        
+        Returns None if not a restoration domain.
+        """
+        return self.restoration_source_mapping.get(canonical_domain)
+    
+    def add_mapping(self, domain_name: str, canonical: str) -> None:
+        """
+        Add a new domain mapping.
+        
+        This will be persisted when save_config() is called.
+        """
+        if domain_name not in self.domain_mapping:
+            self.domain_mapping[domain_name] = canonical
+            self._new_mappings[domain_name] = canonical
+            # Remove from unresolved if it was there
+            self._unresolved.discard(domain_name)
+    
+    def mark_unresolved(self, domain_name: str) -> None:
+        """Mark a domain name as unresolved for later review."""
+        if domain_name not in self.domain_mapping:
+            self._unresolved.add(domain_name)
+    
+    def get_unresolved(self) -> Set[str]:
+        """Get all unresolved domain names."""
+        return self._unresolved.copy()
+    
+    def get_new_mappings(self) -> Dict[str, str]:
+        """Get mappings added during this session."""
+        return self._new_mappings.copy()
+    
+    def save_config(self) -> bool:
+        """
+        Save the current configuration to the JSON file.
+        
+        Returns True if changes were saved, False if no changes.
+        """
+        if not self._new_mappings and not self._unresolved:
+            return False
+        
+        config = {
+            "_description": "Domain mapping configuration for manifest generation. Maps various naming conventions to canonical domain names.",
+            "_last_updated": datetime.now().strftime("%Y-%m-%d"),
+            "canonical_generation_domains": sorted(self.canonical_generation_domains),
+            "canonical_restoration_domains": sorted(self.canonical_restoration_domains),
+            "restoration_source_mapping": self.restoration_source_mapping,
+            "domain_mapping": dict(sorted(self.domain_mapping.items())),
+            "known_datasets": sorted(self.known_datasets),
+            "supported_extensions": list(self.supported_extensions),
+            "unresolved_domains": sorted(self._unresolved),
+        }
+        
+        self.config_path.parent.mkdir(parents=True, exist_ok=True)
+        with open(self.config_path, 'w') as f:
+            json.dump(config, f, indent=2)
+        
+        return True
+    
+    def try_auto_resolve(self, domain_name: str) -> Optional[str]:
+        """
+        Try to automatically resolve an unknown domain name.
+        
+        Uses heuristics to match domain names to canonical forms.
+        If successful, adds the mapping automatically.
+        
+        Returns the canonical domain if resolved, None otherwise.
+        """
+        lower = domain_name.lower()
+        
+        # Try common patterns
+        patterns = [
+            # Weather keywords
+            (r'fog|haz[ey]', 'foggy'),
+            (r'rain', 'rainy'),
+            (r'snow', 'snowy'),
+            (r'night|dark', 'night'),
+            (r'cloud|overcast', 'cloudy'),
+            (r'dawn|dusk|sunrise|sunset', 'dawn_dusk'),
+            # Restoration keywords
+            (r'derain', 'derained'),
+            (r'dehaz|defog', 'dehazed'),
+            (r'desnow', 'desnowed'),
+        ]
+        
+        for pattern, canonical in patterns:
+            if re.search(pattern, lower):
+                # Verify canonical is valid
+                if canonical in self.canonical_domains:
+                    self.add_mapping(domain_name, canonical)
+                    return canonical
+        
+        return None
 
-# Mapping from restoration domain to source weather domain (for matching originals)
-# e.g., "derained" images come from "rainy" source images
-RESTORATION_SOURCE_MAPPING = {
-    "derained": "rainy",
-    "dehazed": "foggy",
-    "desnowed": "snowy",
-    "night2day": "night",
-}
 
-# Mapping of various domain naming conventions to canonical names
-DOMAIN_MAPPING = {
-    # =========================================================================
-    # GENERATION DOMAINS (clear -> adverse weather)
-    # =========================================================================
-    
-    # Foggy variants
-    "fog": "foggy",
-    "foggy": "foggy",
-    "clearday2foggy": "foggy",
-    "clear_day2foggy": "foggy",
-    "sunny_day2foggy": "foggy",
-    "clear_day2fog": "foggy",
-    "sunny2foggy": "foggy",
-    
-    # Rainy variants
-    "rain": "rainy",
-    "rainy": "rainy",
-    "clearday2rainy": "rainy",
-    "clear_day2rainy": "rainy",
-    "sunny_day2rainy": "rainy",
-    "sunny2rainy": "rainy",
-    
-    # Snowy variants
-    "snow": "snowy",
-    "snowy": "snowy",
-    "snow_no_flakes": "snowy",
-    "clearday2snowy": "snowy",
-    "clear_day2snowy": "snowy",
-    "sunny_day2snowy": "snowy",
-    "sunny2snowy": "snowy",
-    
-    # Night variants
-    "night": "night",
-    "clearday2night": "night",
-    "clear_day2night": "night",
-    "sunny_day2night": "night",
-    "sunny2night": "night",
-    
-    # Cloudy variants
-    "cloudy": "cloudy",
-    "clouds": "cloudy",
-    "clearday2cloudy": "cloudy",
-    "clear_day2cloudy": "cloudy",
-    "sunny_day2cloudy": "cloudy",
-    "sunny2cloudy": "cloudy",
-    
-    # Dawn/Dusk variants
-    "dawn_dusk": "dawn_dusk",
-    "dawndusk": "dawn_dusk",
-    "sunrisesunset": "dawn_dusk",
-    "sunrise_sunset": "dawn_dusk",
-    "clearday2dawn_dusk": "dawn_dusk",
-    "clear_day2dawn_dusk": "dawn_dusk",
-    "sunny_day2dawn_dusk": "dawn_dusk",
-    "sunny2dawn_dusk": "dawn_dusk",
-    
-    # =========================================================================
-    # RESTORATION DOMAINS (adverse weather -> clear)
-    # =========================================================================
-    
-    # Derained (rain removal) - source is rainy images
-    "derained": "derained",
-    "derained2": "derained",
-    "derained_drop": "derained",
-    "derained_CSD-teacher": "derained",
-    "derained_ITS-OTS-teacher": "derained",
-    "derained_Rain1400-teacher": "derained",
-    "derained_Raindrop": "derained",
-    "derained_Rainfog": "derained",
-    "derained_Snow100k": "derained",
-    "derained_student-setting1": "derained",
-    "derained_student-setting2": "derained",
-    
-    # Dehazed/Defogged (fog/haze removal) - source is foggy images
-    "dehazed": "dehazed",
-    "defogged": "dehazed",
-    "defogged2": "dehazed",
-    "defogged_Raindrop": "dehazed",
-    "defogged_Rainfog": "dehazed",
-    "defog": "dehazed",
-    "dehaze": "dehazed",
-    
-    # Desnowed (snow removal) - source is snowy images
-    "desnowed": "desnowed",
-    "desnowed_CSD-teacher": "desnowed",
-    "desnowed_ITS-OTS-teacher": "desnowed",
-    "desnowed_Rain1400-teacher": "desnowed",
-    "desnowed_Raindrop": "desnowed",
-    "desnowed_Rainfog": "desnowed",
-    "desnowed_Snow100k": "desnowed",
-    "desnowed_student-setting1": "desnowed",
-    "desnowed_student-setting2": "desnowed",
-    
-    # Night2Day (night enhancement) - source is night images
-    "night2day": "night2day",
-    "night_to_day": "night2day",
-    "nighttoday": "night2day",
-}
+# Global config instance (initialized in main or when needed)
+_domain_config: Optional[DomainMappingConfig] = None
 
-# Known dataset names
-KNOWN_DATASETS = {'ACDC', 'BDD100k', 'BDD10k', 'IDD-AW', 'MapillaryVistas', 'OUTSIDE15k'}
 
-# Supported image extensions
-SUPPORTED_EXTENSIONS = {'.png', '.jpg', '.jpeg', '.tiff', '.tif', '.bmp'}
+def get_domain_config(config_path: Optional[Path] = None) -> DomainMappingConfig:
+    """Get or create the domain mapping configuration."""
+    global _domain_config
+    if _domain_config is None:
+        _domain_config = DomainMappingConfig(config_path)
+    return _domain_config
+
+
+def set_domain_config(config: DomainMappingConfig) -> None:
+    """Set the global domain configuration instance."""
+    global _domain_config
+    _domain_config = config
 
 
 # =============================================================================
-# Utility Functions
+# Convenience functions that use the global config
 # =============================================================================
 
 def normalize_domain(domain_name: str) -> Optional[str]:
-    """
-    Map a domain name to its canonical form.
-    
-    Returns None if the domain is not recognized.
-    """
-    # Direct lookup
-    if domain_name in DOMAIN_MAPPING:
-        return DOMAIN_MAPPING[domain_name]
-    
-    # Try lowercase
-    lower = domain_name.lower()
-    if lower in DOMAIN_MAPPING:
-        return DOMAIN_MAPPING[lower]
-    
-    # Try extracting target from translation pattern (e.g., "sunny_day2foggy")
-    if '2' in domain_name:
-        parts = domain_name.split('2', 1)
-        if len(parts) > 1:
-            target = parts[1]
-            if target in DOMAIN_MAPPING:
-                return DOMAIN_MAPPING[target]
-            if target.lower() in DOMAIN_MAPPING:
-                return DOMAIN_MAPPING[target.lower()]
-    
-    # Check if it's a canonical domain
-    if domain_name in CANONICAL_DOMAINS:
-        return domain_name
-    
-    return None
+    """Map a domain name to its canonical form using global config."""
+    return get_domain_config().normalize_domain(domain_name)
 
 
 def is_restoration_domain(canonical_domain: str) -> bool:
     """Check if a canonical domain is a restoration task."""
-    return canonical_domain in CANONICAL_RESTORATION_DOMAINS
+    return get_domain_config().is_restoration_domain(canonical_domain)
 
 
 def get_restoration_source_domain(canonical_domain: str) -> Optional[str]:
-    """
-    Get the source weather domain for a restoration task.
-    
-    For restoration tasks, the input images come from adverse weather conditions.
-    E.g., 'derained' takes 'rainy' images as input.
-    
-    Returns None if not a restoration domain.
-    """
-    return RESTORATION_SOURCE_MAPPING.get(canonical_domain)
+    """Get the source weather domain for a restoration task."""
+    return get_domain_config().get_restoration_source_domain(canonical_domain)
+
+
+def get_known_datasets() -> Set[str]:
+    """Get the set of known dataset names."""
+    return get_domain_config().known_datasets
+
+
+def get_supported_extensions() -> Tuple[str, ...]:
+    """Get the tuple of supported image extensions."""
+    return get_domain_config().supported_extensions
 
 
 def extract_source_domain(domain_name: str) -> Optional[str]:
@@ -236,9 +305,10 @@ def extract_source_domain(domain_name: str) -> Optional[str]:
 def find_image_files(directory: Path, recursive: bool = True) -> List[Path]:
     """Find all supported image files in a directory."""
     image_files = []
+    extensions = get_supported_extensions()
     try:
         glob_func = directory.rglob if recursive else directory.glob
-        for ext in SUPPORTED_EXTENSIONS:
+        for ext in extensions:
             image_files.extend(glob_func(f"*{ext}"))
             image_files.extend(glob_func(f"*{ext.upper()}"))
     except PermissionError:
@@ -288,6 +358,8 @@ def detect_directory_structure(method_dir: Path) -> str:
     - 'flat_dataset': dataset folders with images directly in them
     - 'unknown': could not determine structure
     """
+    known_datasets = get_known_datasets()
+    
     try:
         subdirs = [d for d in method_dir.iterdir() if d.is_dir() and not d.name.startswith('.')]
     except PermissionError:
@@ -300,7 +372,7 @@ def detect_directory_structure(method_dir: Path) -> str:
     first_name = first_subdir.name
     
     # Check if first level is datasets
-    if first_name in KNOWN_DATASETS:
+    if first_name in known_datasets:
         # Check second level
         try:
             second_level = [d for d in first_subdir.iterdir() if d.is_dir()]
@@ -311,7 +383,7 @@ def detect_directory_structure(method_dir: Path) -> str:
             second_name = second_level[0].name
             if normalize_domain(second_name) is not None:
                 return 'dataset_domain'
-            elif second_name in KNOWN_DATASETS:
+            elif second_name in known_datasets:
                 return 'flat_dataset'  # Nested datasets
             else:
                 # Check if there are images directly
@@ -331,12 +403,12 @@ def detect_directory_structure(method_dir: Path) -> str:
         
         if second_level:
             second_name = second_level[0].name
-            if second_name in KNOWN_DATASETS:
+            if second_name in known_datasets:
                 return 'domain_dataset'
             else:
                 # Check for nested patterns (e.g., test_latest)
                 for nested in second_level:
-                    if nested.name in KNOWN_DATASETS:
+                    if nested.name in known_datasets:
                         return 'domain_dataset'
                     # Check if this is cycleGAN style (test_latest/images)
                     try:
@@ -394,6 +466,9 @@ def build_original_index(original_dir: Path) -> Tuple[Dict[str, Path], Dict[str,
     # Maps: weather_domain -> {stem -> path}
     weather_indices: Dict[str, Dict[str, Path]] = defaultdict(dict)
     
+    known_datasets = get_known_datasets()
+    canonical_gen_domains = get_domain_config().canonical_generation_domains
+    
     for path in original_files:
         stem = path.stem
         
@@ -403,7 +478,7 @@ def build_original_index(original_dir: Path) -> Tuple[Dict[str, Path], Dict[str,
         domain = None
         parts = path.parts
         for i, part in enumerate(parts):
-            if part in KNOWN_DATASETS:
+            if part in known_datasets:
                 dataset = part
                 # Domain should be next part
                 if i + 1 < len(parts) - 1:  # -1 because last part is filename
@@ -413,7 +488,7 @@ def build_original_index(original_dir: Path) -> Tuple[Dict[str, Path], Dict[str,
         # Add to weather domain index if domain is recognized
         if domain:
             canonical = normalize_domain(domain)
-            if canonical and canonical in CANONICAL_GENERATION_DOMAINS:
+            if canonical and canonical in canonical_gen_domains:
                 # This is a weather domain image - useful for restoration source matching
                 weather_indices[canonical][stem] = path
         
@@ -469,6 +544,8 @@ def process_domain_dataset_structure(
         else:
             match_index = original_index
         
+        known_datasets = get_known_datasets()
+        
         # Check for dataset subdirectories
         try:
             subdirs = list(domain_dir.iterdir())
@@ -479,7 +556,7 @@ def process_domain_dataset_structure(
             if not dataset_dir.is_dir():
                 continue
             
-            if dataset_dir.name in KNOWN_DATASETS:
+            if dataset_dir.name in known_datasets:
                 dataset = dataset_dir.name
                 images = find_image_files(dataset_dir, recursive=True)
                 

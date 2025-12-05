@@ -1,0 +1,106 @@
+{
+  "_description": "Domain mapping configuration for manifest generation. Maps various naming conventions to canonical domain names.",
+  "_last_updated": "2025-12-05",
+  
+  "canonical_generation_domains": [
+    "snowy", "rainy", "foggy", "night", "cloudy", "dawn_dusk"
+  ],
+  
+  "canonical_restoration_domains": [
+    "derained", "dehazed", "desnowed", "night2day"
+  ],
+  
+  "restoration_source_mapping": {
+    "derained": "rainy",
+    "dehazed": "foggy", 
+    "desnowed": "snowy",
+    "night2day": "night"
+  },
+  
+  "domain_mapping": {
+    "fog": "foggy",
+    "foggy": "foggy",
+    "clearday2foggy": "foggy",
+    "clear_day2foggy": "foggy",
+    "sunny_day2foggy": "foggy",
+    "clear_day2fog": "foggy",
+    "sunny2foggy": "foggy",
+    
+    "rain": "rainy",
+    "rainy": "rainy",
+    "clearday2rainy": "rainy",
+    "clear_day2rainy": "rainy",
+    "sunny_day2rainy": "rainy",
+    "sunny2rainy": "rainy",
+    
+    "snow": "snowy",
+    "snowy": "snowy",
+    "snow_no_flakes": "snowy",
+    "clearday2snowy": "snowy",
+    "clear_day2snowy": "snowy",
+    "sunny_day2snowy": "snowy",
+    "sunny2snowy": "snowy",
+    
+    "night": "night",
+    "clearday2night": "night",
+    "clear_day2night": "night",
+    "sunny_day2night": "night",
+    "sunny2night": "night",
+    
+    "cloudy": "cloudy",
+    "clouds": "cloudy",
+    "clearday2cloudy": "cloudy",
+    "clear_day2cloudy": "cloudy",
+    "sunny_day2cloudy": "cloudy",
+    "sunny2cloudy": "cloudy",
+    
+    "dawn_dusk": "dawn_dusk",
+    "dawndusk": "dawn_dusk",
+    "sunrisesunset": "dawn_dusk",
+    "sunrise_sunset": "dawn_dusk",
+    "clearday2dawn_dusk": "dawn_dusk",
+    "clear_day2dawn_dusk": "dawn_dusk",
+    "sunny_day2dawn_dusk": "dawn_dusk",
+    "sunny2dawn_dusk": "dawn_dusk",
+    
+    "derained": "derained",
+    "derained2": "derained",
+    "derained_drop": "derained",
+    "derained_CSD-teacher": "derained",
+    "derained_ITS-OTS-teacher": "derained",
+    "derained_Rain1400-teacher": "derained",
+    "derained_Raindrop": "derained",
+    "derained_Rainfog": "derained",
+    "derained_Snow100k": "derained",
+    "derained_student-setting1": "derained",
+    "derained_student-setting2": "derained",
+    
+    "dehazed": "dehazed",
+    "defogged": "dehazed",
+    "defogged2": "dehazed",
+    "defogged_Raindrop": "dehazed",
+    "defogged_Rainfog": "dehazed",
+    "defog": "dehazed",
+    "dehaze": "dehazed",
+    
+    "desnowed": "desnowed",
+    "desnowed_CSD-teacher": "desnowed",
+    "desnowed_ITS-OTS-teacher": "desnowed",
+    "desnowed_Rain1400-teacher": "desnowed",
+    "desnowed_Raindrop": "desnowed",
+    "desnowed_Rainfog": "desnowed",
+    "desnowed_Snow100k": "desnowed",
+    "desnowed_student-setting1": "desnowed",
+    "desnowed_student-setting2": "desnowed",
+    
+    "night2day": "night2day",
+    "night_to_day": "night2day",
+    "nighttoday": "night2day"
+  },
+  
+  "known_datasets": [
+    "ACDC", "BDD100k", "BDD10k", "IDD-AW", "MapillaryVistas", "OUTSIDE15k"
+  ],
+  
+  "unresolved_domains": []
+}
