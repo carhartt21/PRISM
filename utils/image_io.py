@@ -109,8 +109,9 @@ def load_pairs_from_csv(manifest_path: Path) -> List[Tuple[Path, Path, str, Opti
             original_path = Path(row['original_path'])
             name = row.get('name', f"pair_{i:04d}")
 
-            # Accept multiple domain column names for backward compatibility.
-            domain = row.get('domain') or row.get('domain_canonical') or row.get('domain_raw')
+            # Accept multiple domain column names. Prefer the raw folder/domain name
+            # (e.g., sunny_day2cloudy) so per-domain filtering matches generated subfolders.
+            domain = row.get('domain_raw') or row.get('domain') or row.get('domain_canonical')
             dataset = row.get('dataset')
 
             if not gen_path.exists():
@@ -163,9 +164,22 @@ def pair_image_paths(
             raise ValueError("Manifest file required for CSV pairing strategy")
         pairs = load_pairs_from_csv(manifest)
         
-        # Filter by domain if requested
+        # Filter by domain if requested.
+        # Match if filter_domain equals the manifest domain OR if filter_domain
+        # appears as a path component in the generated file path. This handles
+        # different folder structures (domain/dataset vs dataset/domain).
         if filter_domain:
-            pairs = [p for p in pairs if p[3] == filter_domain]
+            def domain_matches(pair: Tuple[Path, Path, str, Optional[str], Optional[str]]) -> bool:
+                gen_path, _, _, manifest_domain, _ = pair
+                # Direct match on manifest domain
+                if manifest_domain == filter_domain:
+                    return True
+                # Check if filter_domain appears as a path component
+                path_parts = gen_path.parts
+                if filter_domain in path_parts:
+                    return True
+                return False
+            pairs = [p for p in pairs if domain_matches(p)]
         
         return pairs
 
