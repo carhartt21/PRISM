@@ -249,6 +249,9 @@ if __name__ == "__main__":
     # Test the mapper
     import sys
     
+    # Configure basic logging for standalone test
+    logging.basicConfig(level=logging.INFO, format="%(message)s")
+    
     test_files = [
         "GOPR0122_frame_000161_rgb_ref_anon.png",  # ACDC
         "0000f77c-6257be58.jpg",  # BDD
@@ -257,15 +260,15 @@ if __name__ == "__main__":
         "ADE_train_00000134.jpg",  # OUTSIDE15k
     ]
     
-    print("Testing pattern-based identification:")
+    logging.info("Testing pattern-based identification:")
     for f in test_files:
         dataset = identify_dataset(f)
-        print(f"  {f} -> {dataset}")
+        logging.info("  %s -> %s", f, dataset)
     
     if len(sys.argv) > 1:
         original_dir = Path(sys.argv[1])
-        print(f"\nTesting with lookup from {original_dir}:")
+        logging.info("Testing with lookup from %s:", original_dir)
         mapper = DatasetMapper(original_dir)
         for f in test_files:
             dataset = mapper.get_dataset(f)
-            print(f"  {f} -> {dataset}")
+            logging.info("  %s -> %s", f, dataset)

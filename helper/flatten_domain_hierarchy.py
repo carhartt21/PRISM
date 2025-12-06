@@ -160,21 +160,21 @@ if __name__ == '__main__':
     root = Path(args.root)
     extensions = [e if e.startswith('.') else f'.{e}' for e in args.extensions]
 
-    print(f"Flattening domains in: {root}")
-    print(f"Extensions: {extensions}")
-    print(f"Add prefix: {args.add_prefix}")
-    print(f"Dry run: {args.dry_run}")
+    logging.info("Flattening domains in: %s", root)
+    logging.info("Extensions: %s", extensions)
+    logging.info("Add prefix: %s", args.add_prefix)
+    logging.info("Dry run: %s", args.dry_run)
 
     results = flatten_root(root, extensions, add_prefix=args.add_prefix, dry_run=args.dry_run)
 
-    print('\nSummary:')
+    logging.info("Summary:")
     for domain, stats in results.items():
-        print(f"{domain}: moved={stats['moved']}, skipped_non_images={stats['skipped_non_images']}, failed={len(stats['failed'])}")
+        logging.info("%s: moved=%d, skipped_non_images=%d, failed=%d", domain, stats['moved'], stats['skipped_non_images'], len(stats['failed']))
 
     if any(stats['failed'] for stats in results.values()):
-        print('\nFailed files:')
+        logging.warning("Failed files:")
         for domain, stats in results.items():
             if stats['failed']:
-                print(f"\nDomain: {domain}")
+                logging.warning("Domain: %s", domain)
                 for p in stats['failed']:
-                    print(f"  {p}")
+                    logging.warning("  %s", p)

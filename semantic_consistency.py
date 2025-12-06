@@ -15,6 +15,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Tuple, Optional
 import warnings
+import logging
 
 from transformers import SegformerImageProcessor, SegformerForSemanticSegmentation
 import numpy as np
@@ -75,15 +76,15 @@ def load_suffixes(config_path: Optional[Path]) -> Tuple[str, ...]:
         with open(config_path, 'r', encoding='utf-8') as f:
             data = json.load(f)
     except FileNotFoundError:
-        print(f"Warning: Suffix config not found at {config_path}. Using empty defaults.")
+        logging.warning("Suffix config not found at %s. Using empty defaults.", config_path)
         return ()
     except json.JSONDecodeError as err:
-        print(f"Warning: Failed to parse suffix config {config_path}: {err}. Using empty defaults.")
+        logging.warning("Failed to parse suffix config %s: %s. Using empty defaults.", config_path, err)
         return ()
 
     suffixes = data.get('suffixes', [])
     if not isinstance(suffixes, list):
-        print(f"Warning: 'suffixes' must be a list in {config_path}. Using empty defaults.")
+        logging.warning("'suffixes' must be a list in %s. Using empty defaults.", config_path)
         return ()
 
     normalized = []
@@ -121,18 +122,18 @@ class SegFormerEvaluator:
         self.class_names = class_names if class_names else CITYSCAPES_CLASS_NAMES
         self.segmentation_cache_dir = Path(segmentation_cache_dir) if segmentation_cache_dir else None
         
-        print(f"Initializing SegFormer ({model_name}) on {self.device}...")
+        logging.info("Initializing SegFormer (%s) on %s...", model_name, self.device)
         if self.segmentation_cache_dir:
-            print(f"Using precalculated segmentation cache: {self.segmentation_cache_dir}")
+            logging.info("Using precalculated segmentation cache: %s", self.segmentation_cache_dir)
         
         # Load processor and model
         try:
-            print(f"Attempting to load {model_name} from cache...")
+            logging.debug("Attempting to load %s from cache...", model_name)
             self.processor = SegformerImageProcessor.from_pretrained(model_name, cache_dir=cache_dir, local_files_only=True)
             self.model = SegformerForSemanticSegmentation.from_pretrained(model_name, cache_dir=cache_dir, local_files_only=True)
-            print("Successfully loaded from cache!")
+            logging.debug("Successfully loaded from cache!")
         except Exception as e:
-            print(f"Cache miss or error ({e}). Downloading model...")
+            logging.debug("Cache miss or error (%s). Downloading model...", e)
             self.processor = SegformerImageProcessor.from_pretrained(model_name, cache_dir=cache_dir)
             self.model = SegformerForSemanticSegmentation.from_pretrained(model_name, cache_dir=cache_dir)
         
@@ -142,7 +143,7 @@ class SegFormerEvaluator:
         # Get number of classes from config
         self.num_classes = self.model.config.num_labels
         
-        print(f"Model loaded with {self.num_classes} classes!\n")
+        logging.info("Model loaded with %d classes!", self.num_classes)
 
     def load_cached_mask(self, image_path: Path) -> Optional[np.ndarray]:
         """
@@ -162,7 +163,7 @@ class SegFormerEvaluator:
             try:
                 return np.load(cache_path, allow_pickle=False)
             except Exception as e:
-                print(f"Warning: Failed to load cached mask {cache_path}: {e}")
+                logging.warning("Failed to load cached mask %s: %s", cache_path, e)
                 return None
         return None
 
@@ -581,10 +582,19 @@ class SegFormerEvaluator:
                     'class_details': weighted_iou_metrics['class_details']
                 })
         
-        # Log cache statistics at the end
+        # Log cache statistics at the end if cache hit rate is low
         total = cache_hits + cache_misses
         if total > 0:
-            print(f"Segmentation cache: {cache_hits}/{total} hits ({100*cache_hits/total:.1f}%), {cache_misses} computed")
+            hit_rate = cache_hits / total
+            # Avoid spamming the console for healthy cache rates; only warn when coverage < 50%
+            if hit_rate < 0.5:
+                logging.info(
+                    "Segmentation cache: %d/%d hits (%.1f%%), %d computed",
+                    cache_hits,
+                    total,
+                    100 * hit_rate,
+                    cache_misses,
+                )
         
         return results
 
@@ -612,7 +622,7 @@ class DeepLabV3Evaluator:
         self.num_classes = num_classes
         self.class_names = class_names if class_names else CITYSCAPES_CLASS_NAMES
         
-        print(f"Initializing DeepLabV3 with {backbone} backbone on {self.device}...")
+        logging.info("Initializing DeepLabV3 with %s backbone on %s...", backbone, self.device)
         
         # Load pre-trained DeepLabV3 model
         if backbone == 'resnet50':
@@ -628,9 +638,9 @@ class DeepLabV3Evaluator:
             # Some checkpoints include auxiliary heads; load non-matching keys loosely.
             missing, unexpected = self.model.load_state_dict(state_dict, strict=False)
             if unexpected:
-                print(f"Warning: Ignored unexpected keys in checkpoint: {unexpected}")
+                logging.warning("Ignored unexpected keys in checkpoint: %s", unexpected)
             if missing:
-                print(f"Warning: Missing keys when loading checkpoint: {missing}")
+                logging.warning("Missing keys when loading checkpoint: %s", missing)
             self.model.eval()
         elif backbone == 'resnet101':
             self.model = models.segmentation.deeplabv3_resnet101(
@@ -653,7 +663,7 @@ class DeepLabV3Evaluator:
             )
         ])
         
-        print("Model loaded successfully!\n")
+        logging.info("Model loaded successfully!")
     
     def segment_image(self, image_path: Path) -> np.ndarray:
         """
@@ -952,7 +962,7 @@ def get_image_pairs(
         translated_by_dir.setdefault((rel_dir, norm_stem), []).append(path)
         translated_by_stem.setdefault(norm_stem, []).append(path)
 
-    print(f"Found {len(source_entries)} source images for pairing.")
+    logging.info("Found %d source images for pairing.", len(source_entries))
 
     pairs: List[Tuple[Path, Path]] = []
     missing = 0
@@ -969,7 +979,7 @@ def get_image_pairs(
 
         if not candidates:
             missing += 1
-            print(f"Warning: No matching translated image for {source_path.relative_to(source_dir)}")
+            logging.warning("No matching translated image for %s", source_path.relative_to(source_dir))
             continue
 
         match = next(
@@ -980,14 +990,14 @@ def get_image_pairs(
 
         if used_fallback:
             fallback_matches += 1
-            print(
-                f"Info: Matched {source_path.relative_to(source_dir)} using fallback search in translated tree."
+            logging.debug(
+                "Matched %s using fallback search in translated tree.", source_path.relative_to(source_dir)
             )
 
         pairs.append((source_path, match))
 
-    print(
-        f"Pairing complete: {len(pairs)} matches, {missing} missing, {fallback_matches} fallback matches."
+    logging.info(
+        "Pairing complete: %d matches, %d missing, %d fallback matches.", len(pairs), missing, fallback_matches
     )
 
     return pairs
@@ -1079,7 +1089,7 @@ def save_results(
     with open(output_path, 'w') as f:
         json.dump(output_data, f, indent=2)
     
-    print(f"\nResults saved to: {output_path}")
+    logging.info("Results saved to: %s", output_path)
 
 
 def print_results(
@@ -1093,31 +1103,31 @@ def print_results(
     Args:
         results: Aggregated results dictionary
     """
-    print("\n" + "="*60)
-    print("SEMANTIC CONSISTENCY EVALUATION RESULTS")
-    print("="*60)
+    logging.info("\n" + "="*60)
+    logging.info("SEMANTIC CONSISTENCY EVALUATION RESULTS")
+    logging.info("="*60)
     if source_dir:
-        print(f"Source directory: {source_dir}")
+        logging.info("Source directory: %s", source_dir)
     if translated_dir:
-        print(f"Translated directory: {translated_dir}")
-    print(f"\nNumber of image pairs evaluated: {results['num_pairs_evaluated']}")
-    print(f"\nAverage Pixel Accuracy: {results['average_pixel_accuracy']:.2f}%")
-    print(f"Average mIoU: {results['average_mIoU']:.2f}%")
+        logging.info("Translated directory: %s", translated_dir)
+    logging.info("Number of image pairs evaluated: %d", results['num_pairs_evaluated'])
+    logging.info("Average Pixel Accuracy: %.2f%%", results['average_pixel_accuracy'])
+    logging.info("Average mIoU: %.2f%%", results['average_mIoU'])
     if 'average_fw_IoU' in results:
-        print(f"Average Frequency-Weighted IoU: {results['average_fw_IoU']:.2f}%")
+        logging.info("Average Frequency-Weighted IoU: %.2f%%", results['average_fw_IoU'])
     
     if results.get('average_class_IoUs'):
-        print("\nClass-wise IoU (%):")
+        logging.info("Class-wise IoU (%%):")
         for cls, iou in sorted(results['average_class_IoUs'].items()):
-            print(f"  {cls}: {iou:.2f}%")
+            logging.info("  %s: %.2f%%", cls, iou)
     if results.get('average_fw_class_details'):
-        print("\nFrequency-weighted class details (%):")
+        logging.info("Frequency-weighted class details (%%):")
         for cls, stats in sorted(results['average_fw_class_details'].items()):
             avg_iou = stats.get('average_IoU', 0.0)
             avg_freq = stats.get('average_frequency', 0.0)
-            print(f"  {cls}: IoU {avg_iou:.2f}%, freq {avg_freq:.2f}%")
+            logging.info("  %s: IoU %.2f%%, freq %.2f%%", cls, avg_iou, avg_freq)
     
-    print("="*60 + "\n")
+    logging.info("="*60)
 
 
 def main():
@@ -1298,7 +1308,7 @@ def main():
     )
     
     # Get image pairs
-    print("Finding image pairs...")
+    logging.info("Finding image pairs...")
     default_suffixes = load_suffixes(suffix_config_path)
 
     image_pairs = get_image_pairs(
@@ -1310,17 +1320,17 @@ def main():
     )
     
     if not image_pairs:
-        print("Error: No matching image pairs found!")
+        logging.error("No matching image pairs found!")
         return
     
-    print(f"Found {len(image_pairs)} image pairs\n")
+    logging.info("Found %d image pairs", len(image_pairs))
     
     # Evaluate all pairs
     all_results = []
     cache_hits = 0
     cache_writes = 0
     
-    print("Evaluating semantic consistency...")
+    logging.info("Evaluating semantic consistency...")
     for source_path, translated_path in tqdm(image_pairs, desc="Processing"):
         try:
             cache_file = build_output_path(source_cache_dir, source_dir, source_path, '.npy')
@@ -1376,12 +1386,12 @@ def main():
             }
             all_results.append(result)
         except Exception as e:
-            print(f"\nError processing {source_path.name}: {str(e)}")
+            logging.error("Error processing %s: %s", source_path.name, str(e))
             continue
 
     if source_cache_dir:
-        print(
-            f"Source cache summary -> hits: {cache_hits}, writes: {cache_writes}, directory: {source_cache_dir}"
+        logging.info(
+            "Source cache summary -> hits: %d, writes: %d, directory: %s", cache_hits, cache_writes, source_cache_dir
         )
     
     # Aggregate results
@@ -1405,7 +1415,7 @@ def main():
         translated_dir=translated_dir
     )
     
-    print("Evaluation complete!")
+    logging.info("Evaluation complete!")
 
 
 if __name__ == '__main__':
