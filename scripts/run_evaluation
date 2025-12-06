@@ -12,7 +12,11 @@
 # Generated: The generated/translated images to evaluate
 GENERATED_ROOT_DIR="/scratch/aaa_exchange/AWARE/GENERATED_IMAGES"
 
-MODEL="CUT"
+if [ "$1" == "--regenerate-manifest" ]; then
+    MODEL="${2:-CUT}"
+else
+    MODEL="${1:-CUT}"
+fi
 
 GENERATED_DIR="${GENERATED_ROOT_DIR}/${MODEL}"
 
@@ -23,7 +27,7 @@ ORIGINAL_DIR="/scratch/aaa_exchange/AWARE/FINAL_SPLITS/train/images"
 TARGET_DIR="/scratch/aaa_exchange/AWARE/AWACS/train"
 
 # Statistics directory (contains precomputed FID stats, segmentation, LPIPS features)
-STATS_DIR="/scratch/aaa_exchange/AWARE/STATS/${MODEL}_stats"
+STATS_DIR="/scratch/aaa_exchange/AWARE/STATS/"
 
 # Manifest file (created by preprocessing step)
 MANIFEST_FILE="manifests/${MODEL}/manifest.csv"
@@ -84,7 +88,7 @@ python3 evaluate_generation.py \
     --cache-dir "$CACHE_DIR" \
     --batch-size 64 \
     --semantic-batch-size 16 \
-    --output "$OUTPUT_FILE" \
+    --output "$MODEL" \
     --verbose
 
 echo ""

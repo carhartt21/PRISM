@@ -27,7 +27,6 @@ from tqdm import tqdm
 # Suppress warnings for cleaner output
 warnings.filterwarnings('ignore')
 
-
 # Cityscapes color palette (19 classes + background) for visualization
 CITYSCAPES_COLORS = np.array([
     [128,  64, 128], [244,  35, 232], [ 70,  70,  70], [102, 102, 156],
@@ -583,7 +582,7 @@ class SegFormerEvaluator:
         
         # Log cache statistics at the end
         total = cache_hits + cache_misses
-        if total > 0:
+        if total > 0 and cache_hits/total < 0.5:
             print(f"Segmentation cache: {cache_hits}/{total} hits ({100*cache_hits/total:.1f}%), {cache_misses} computed")
         
         return results

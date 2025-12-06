@@ -108,7 +108,9 @@ def load_pairs_from_csv(manifest_path: Path) -> List[Tuple[Path, Path, str, Opti
             gen_path = Path(row['gen_path'])
             original_path = Path(row['original_path'])
             name = row.get('name', f"pair_{i:04d}")
-            domain = row.get('domain')
+
+            # Accept multiple domain column names for backward compatibility.
+            domain = row.get('domain') or row.get('domain_canonical') or row.get('domain_raw')
             dataset = row.get('dataset')
 
             if not gen_path.exists():

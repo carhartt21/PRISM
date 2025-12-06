@@ -1270,6 +1270,29 @@ def main() -> None:
         logging.info("Auto-detected --pairs csv due to --manifest")
 
     # --------------------------------------------------------------------------
+    # Output folder handling
+    # --------------------------------------------------------------------------
+    # Interpret the --output argument as a folder name. If a filename was
+    # provided (e.g. results.json) strip the suffix. If the path is relative,
+    # create the folder under args.stats_dir so outputs live alongside stats.
+    output_arg: Path = args.output
+    # If user passed a file-like name (has a common extension), strip it
+    if output_arg.suffix in {".json", ".md", ".csv", ".txt"}:
+        output_dir_name = output_arg.with_suffix("")
+    else:
+        output_dir_name = output_arg
+
+    if output_dir_name.is_absolute():
+        output_dir = output_dir_name
+    else:
+        # Ensure stats_dir exists and use it as base for outputs
+        base_stats = args.stats_dir or Path("stats")
+        output_dir = base_stats / output_dir_name
+
+    output_dir.mkdir(parents=True, exist_ok=True)
+    logging.info("Saving all outputs to %s", output_dir)
+
+    # --------------------------------------------------------------------------
     # Precalculate mode: compute and store FID statistics only
     # --------------------------------------------------------------------------
     if args.precalculate:
@@ -1391,7 +1414,7 @@ def main() -> None:
                     semantic_device=semantic_device,
                     semantic_batch_size=args.semantic_batch_size,
                     verbose=args.verbose,
-                    stats_dir=args.stats_dir,
+                    stats_dir=output_dir,
                     cache_dir=args.cache_dir,
                     original_segmentation_cache_dirs=original_seg_cache_dirs,
                     generated_segmentation_cache=generated_seg_cache,
@@ -1415,7 +1438,7 @@ def main() -> None:
                     semantic_device=semantic_device,
                     semantic_batch_size=args.semantic_batch_size,
                     verbose=args.verbose,
-                    stats_dir=args.stats_dir,
+                    stats_dir=output_dir,
                     cache_dir=args.cache_dir,
                     original_segmentation_cache=None,  # Use multi-dataset cache instead
                     generated_segmentation_cache=generated_seg_cache,
@@ -1481,8 +1504,9 @@ def main() -> None:
                 }
             all_domain_results["total_images"] = total_images
 
-        args.output.write_text(json.dumps(all_domain_results, indent=2))
-        logging.info("Results written to %s", args.output)
+        output_main = output_dir / "results.json"
+        output_main.write_text(json.dumps(all_domain_results, indent=2))
+        logging.info("Results written to %s", output_main)
 
     else:
         # Original flat evaluation
@@ -1649,21 +1673,20 @@ def main() -> None:
         if semantic_payload and semantic_payload["metadata"].get("enabled"):
             out["semantic_consistency"] = semantic_payload["metadata"]
 
-        args.output.write_text(json.dumps(out, indent=2))
-        logging.info("Results written to %s", args.output)
-        
-        # Save per-image details to stats-dir if provided
-        if args.stats_dir:
-            args.stats_dir.mkdir(parents=True, exist_ok=True)
-            per_image_path = args.stats_dir / "per_image_results.json"
-            per_image_path.write_text(json.dumps(per_image_results, indent=2))
-            logging.info("Per-image results saved to %s", per_image_path)
+        output_main = output_dir / "results.json"
+        output_main.write_text(json.dumps(out, indent=2))
+        logging.info("Results written to %s", output_main)
+
+        # Save per-image details to the output folder
+        per_image_path = output_dir / "per_image_results.json"
+        per_image_path.write_text(json.dumps(per_image_results, indent=2))
+        logging.info("Per-image results saved to %s", per_image_path)
             
-            # Also save full results with per-image to stats-dir
-            full_out = {**out, "per_image": per_image_results}
-            full_results_path = args.stats_dir / "full_results.json"
-            full_results_path.write_text(json.dumps(full_out, indent=2))
-            logging.info("Full results with per-image data saved to %s", full_results_path)
+        # Also save full results with per-image to stats-dir
+        full_out = {**out, "per_image": per_image_results}
+        full_results_path = args.stats_dir / "full_results.json"
+        full_results_path.write_text(json.dumps(full_out, indent=2))
+        logging.info("Full results with per-image data saved to %s", full_results_path)
 
 
 if __name__ == "__main__":
