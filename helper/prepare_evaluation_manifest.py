@@ -15,6 +15,7 @@ Outputs a CSV manifest for use with evaluate_generation.py --pairs csv --manifes
 import argparse
 import csv
 import json
+import logging
 import os
 import re
 import sys
@@ -92,12 +93,12 @@ def build_original_index(original_dir: Path, verbose: bool = False) -> Tuple[Dic
         - Dict mapping filename stem to dataset name
     """
     if verbose:
-        print(f"Indexing original images in {original_dir}...")
+        logging.info("Indexing original images in %s...", original_dir)
     
     original_files = find_image_files(original_dir, recursive=True)
     
     if verbose:
-        print(f"  Found {len(original_files)} original images")
+        logging.info("  Found %d original images", len(original_files))
     
     # Build index by stem (without extension)
     index: Dict[str, Path] = {}
@@ -127,16 +128,16 @@ def build_original_index(original_dir: Path, verbose: bool = False) -> Tuple[Dic
                 stem_to_dataset[stem] = dataset
     
     if verbose and duplicates:
-        print(f"  Warning: {len(duplicates)} filenames appear multiple times")
+        logging.warning("  %d filenames appear multiple times", len(duplicates))
         for stem, paths in list(duplicates.items())[:3]:
-            print(f"    '{stem}': {[str(p) for p in paths[:2]]}...")
+            logging.warning("    '%s': %s...", stem, [str(p) for p in paths[:2]])
     
     if verbose:
         # Count per dataset
         dataset_counts = defaultdict(int)
         for ds in stem_to_dataset.values():
             dataset_counts[ds] += 1
-        print(f"  Dataset distribution: {dict(dataset_counts)}")
+        logging.info("  Dataset distribution: %s", dict(dataset_counts))
     
     return index, stem_to_dataset
 
@@ -331,7 +332,7 @@ def create_manifest(
         domains = ["_root"]
     
     if verbose:
-        print(f"\nDiscovered {len(domains)} domains: {domains}")
+        logging.info("Discovered %d domains: %s", len(domains), domains)
     
     all_matched = []
     all_unmatched = []
@@ -363,11 +364,10 @@ def create_manifest(
         domain_stats.append(stats)
         
         if verbose:
-            print(f"  {domain} ({stats['hierarchy_type']}): {stats['matched_count']}/{stats['generated_count']} matched "
-                  f"({stats['match_rate']:.1f}%)")
+            logging.info("  %s (%s): %d/%d matched (%.1f%%)", domain, stats['hierarchy_type'], stats['matched_count'], stats['generated_count'], stats['match_rate'])
             # Print dataset breakdown
             for ds, ds_stats in stats.get("datasets", {}).items():
-                print(f"    - {ds}: {ds_stats['matched']}/{ds_stats['total']}")
+                logging.info("    - %s: %d/%d", ds, ds_stats['matched'], ds_stats['total'])
     
     # Write CSV manifest with dataset column
     output_path.parent.mkdir(parents=True, exist_ok=True)
@@ -405,16 +405,16 @@ def create_manifest(
         json.dump(summary, f, indent=2)
     
     if verbose:
-        print(f"\n=== Summary ===")
-        print(f"Total generated: {summary['total_generated']}")
-        print(f"Total matched: {summary['total_matched']}")
-        print(f"Total unmatched: {summary['total_unmatched']}")
-        print(f"Overall match rate: {summary['overall_match_rate']:.1f}%")
-        print(f"\nDataset breakdown:")
+        logging.info("=== Summary ===")
+        logging.info("Total generated: %d", summary['total_generated'])
+        logging.info("Total matched: %d", summary['total_matched'])
+        logging.info("Total unmatched: %d", summary['total_unmatched'])
+        logging.info("Overall match rate: %.1f%%", summary['overall_match_rate'])
+        logging.info("Dataset breakdown:")
         for ds, ds_stats in aggregate_datasets.items():
-            print(f"  {ds}: {ds_stats['matched']}/{ds_stats['total']} matched")
-        print(f"\nManifest written to: {output_path}")
-        print(f"Summary written to: {summary_path}")
+            logging.info("  %s: %d/%d matched", ds, ds_stats['matched'], ds_stats['total'])
+        logging.info("Manifest written to: %s", output_path)
+        logging.info("Summary written to: %s", summary_path)
     
     # Write unmatched files list if any
     if all_unmatched:
@@ -423,7 +423,7 @@ def create_manifest(
             for path in all_unmatched:
                 f.write(f"{path}\n")
         if verbose:
-            print(f"Unmatched files written to: {unmatched_path}")
+            logging.info("Unmatched files written to: %s", unmatched_path)
     
     return summary
 
