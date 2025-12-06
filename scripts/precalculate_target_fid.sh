@@ -12,7 +12,7 @@
 TARGET_DIR="/scratch/aaa_exchange/AWARE/AWACS/train"
 STATS_DIR="/scratch/aaa_exchange/AWARE/STATS"
 CACHE_DIR="/scratch/chge7185/models"
-IMAGE_SIZE=299
+IMAGE_SIZE=512
 BATCH_SIZE=32
 VERBOSE=1
 FORCE=0

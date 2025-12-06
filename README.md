@@ -7,6 +7,7 @@ PRISM (Pipeline for Robust Image Similarity Metrics) is a comprehensive Python e
 - **Multiple Image Quality Metrics**: FID, SSIM, LPIPS, PSNR, Inception Score
 - **Semantic Consistency Analysis**: Optional SegFormer-based evaluation for class-level agreement
 - **Flexible Input Handling**: Support for different image formats and automatic pairing
+- **Manifest Generation**: Automated manifest creation for large-scale multi-method evaluation ([helper scripts](helper/README.md))
 - **Modular Architecture**: Easy addition of new metrics through plugin-style design
 - **Batch Processing**: Efficient handling of large image datasets with progress tracking
 - **Statistical Analysis**: Confidence intervals, significance testing, and distribution analysis
@@ -189,6 +190,32 @@ python evaluate_generation.py \
   --manifest custom_pairs.csv \
   --output results.json
 ```
+
+#### Automated Manifest Generation
+
+For large-scale evaluation with multiple methods and domains, use the manifest generation scripts in the `helper/` directory:
+
+```bash
+# Generate manifests for all methods
+python helper/generate_all_manifests.py \
+  --generated-base /path/to/GENERATED_IMAGES \
+  --original /path/to/originals \
+  --output-dir ./manifests
+
+# Generate a comprehensive report
+python helper/generate_manifest_report.py \
+  --manifest-dir ./manifests \
+  -o ./manifests/REPORT \
+  --format all
+```
+
+These scripts handle:
+- **Domain normalization**: Maps varied naming conventions (e.g., `fog`, `foggy`, `clear_day2fog`) to canonical domains
+- **Task type detection**: Distinguishes generation (clear→adverse) from restoration (adverse→clear) tasks
+- **Dataset mapping**: Automatically identifies source datasets (ACDC, BDD100k, etc.)
+- **Multi-format reports**: Text, Markdown, and JSON output formats
+
+See [`helper/README.md`](helper/README.md) for detailed documentation.
 
 ## Supported Metrics
 
@@ -442,3 +469,24 @@ If you use PRISM in your research, please cite:
 - Built with PyTorch and TorchMetrics
 - LPIPS implementation from [richzhang/PerceptualSimilarity](https://github.com/richzhang/PerceptualSimilarity)
 - FID implementation based on [mseitzer/pytorch-fid](https://github.com/mseitzer/pytorch-fid)
+
+### Summarizing Results
+
+The `summarize_results.py` script is used to aggregate and analyze evaluation results, including calculating a Composite Quality Score (CQS) for ranking models. It supports multiple output formats such as JSON, Markdown, and CSV.
+
+#### Usage
+
+```bash
+python summarize_results.py \
+  --input ./path/to/evaluation_results.json \
+  --output-json summary.json \
+  --output-md summary.md \
+  --output-csv summary.csv
+```
+
+#### Features
+- **Input**: Accepts JSON files containing evaluation results.
+- **Output**: Generates summaries in JSON, Markdown, and CSV formats.
+- **Composite Quality Score (CQS)**: Calculates a normalized score to rank models based on multiple metrics.
+
+This script is particularly useful for comparing the performance of different models or configurations in a standardized way.
