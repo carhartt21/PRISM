@@ -1192,13 +1192,21 @@ def evaluate_domain(
         "metrics": summary,
     }
 
+    # Extract semantic consistency metadata for the result (exclude per-image details for main output)
     if semantic_payload and semantic_payload["metadata"].get("enabled"):
-        result["semantic_consistency"] = semantic_payload["metadata"]
+        semantic_metadata = semantic_payload["metadata"]
+        # Create a summary version without per_image_details for the main results file
+        semantic_summary = {k: v for k, v in semantic_metadata.items() if k != "per_image_details"}
+        result["semantic_consistency"] = semantic_summary
 
     # Save per-domain stats file (includes per-image details)
     if stats_dir:
         domain_stats_path = stats_dir / f"{domain_name}_stats.json"
-        full_result = {**result, "per_image": per_image_results}
+        # Include full semantic metadata (with per_image_details) in the stats file
+        full_result = {**result}
+        if semantic_payload and semantic_payload["metadata"].get("enabled"):
+            full_result["semantic_consistency"] = semantic_payload["metadata"]  # Full version with per_image_details
+        full_result["per_image"] = per_image_results
         save_domain_stats(full_result, domain_stats_path)
         
         # Save per-image results separately
@@ -1671,7 +1679,9 @@ def main() -> None:
         }
 
         if semantic_payload and semantic_payload["metadata"].get("enabled"):
-            out["semantic_consistency"] = semantic_payload["metadata"]
+            # Exclude per_image_details from main results file
+            semantic_summary = {k: v for k, v in semantic_payload["metadata"].items() if k != "per_image_details"}
+            out["semantic_consistency"] = semantic_summary
 
         output_main = output_dir / "results.json"
         output_main.write_text(json.dumps(out, indent=2))
@@ -1682,8 +1692,10 @@ def main() -> None:
         per_image_path.write_text(json.dumps(per_image_results, indent=2))
         logging.info("Per-image results saved to %s", per_image_path)
             
-        # Also save full results with per-image to stats-dir
+        # Also save full results with per-image to stats-dir (includes full semantic metadata)
         full_out = {**out, "per_image": per_image_results}
+        if semantic_payload and semantic_payload["metadata"].get("enabled"):
+            full_out["semantic_consistency"] = semantic_payload["metadata"]  # Full version with per_image_details
         full_results_path = args.stats_dir / "full_results.json"
         full_results_path.write_text(json.dumps(full_out, indent=2))
         logging.info("Full results with per-image data saved to %s", full_results_path)
