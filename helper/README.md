@@ -151,10 +151,130 @@ python evaluate_generation.py \
 
 ---
 
+### `summarize_results.py`
+
+Collects and summarizes evaluation results from multiple image generation methods, computing a Composite Quality Score (CQS) for ranking different models.
+
+#### Features
+
+- **Multi-method aggregation**: Combines results from multiple evaluation JSON files
+- **Composite Quality Score (CQS)**: Weighted metric combining FID, LPIPS, SSIM, PSNR, and semantic metrics
+- **Ranking and comparison**: Ranks methods by CQS and provides statistical comparisons
+- **Per-domain breakdown**: Shows metrics broken down by weather domains
+- **Flexible input**: Accepts directory of results or individual JSON files
+
+#### Usage
+
+```bash
+# Summarize all results in a directory
+python helper/summarize_results.py --results-dir ./results
+
+# Summarize specific result files
+python helper/summarize_results.py \
+  --results-files result1.json result2.json result3.json \
+  --output summary.json
+
+# Generate detailed report with rankings
+python helper/summarize_results.py \
+  --results-dir ./evaluation_results \
+  --output ./reports/method_comparison.json \
+  -v
+```
+
+#### Arguments
+
+| Argument | Default | Description |
+|----------|---------|-------------|
+| `--results-dir` | None | Directory containing evaluation result JSON files |
+| `--results-files` | None | Specific JSON result files to summarize |
+| `--output` | `summary.json` | Output file for summary report |
+| `-v, --verbose` | False | Show detailed progress and statistics |
+
+#### Output
+
+Generates a JSON report containing:
+- **Method rankings**: Sorted by Composite Quality Score (CQS)
+- **Per-method metrics**: FID, LPIPS, SSIM, PSNR, semantic scores
+- **Statistical analysis**: Means, standard deviations, confidence intervals
+- **Domain breakdowns**: Metrics per weather domain for each method
+
+#### CQS Formula
+
+The Composite Quality Score combines multiple metrics with weights:
+- FID: 40% (lower is better)
+- LPIPS: 25% (lower is better)
+- SSIM: 15% (higher is better)
+- PSNR: 10% (higher is better)
+- Semantic mIoU: 10% (higher is better)
+
+---
+
+### `visualize_results.py`
+
+Generates comprehensive diagrams and visualizations from PRISM evaluation results using seaborn and matplotlib. Creates plots for method comparison, metric distributions, correlations, and domain-wise analysis.
+
+#### Features
+
+- **Method comparison plots**: Bar charts comparing methods across all metrics
+- **Metric distributions**: Box plots showing value distributions for each metric
+- **Correlation analysis**: Heatmaps showing relationships between different metrics
+- **Domain-wise analysis**: Heatmaps showing metrics across weather domains and methods
+- **Radar plots**: Multi-dimensional comparison of methods across all metrics
+- **Scatter plot matrices**: Pairwise relationships between metrics with histograms
+- **Automated report generation**: Summary of created visualizations and statistics
+
+#### Usage
+
+```bash
+# Visualize all results in a directory
+python helper/visualize_results.py --results-dir ./results --output-dir ./plots
+
+# Visualize specific result files
+python helper/visualize_results.py \
+  --results-files result1.json result2.json \
+  --output-dir ./visualizations
+
+# Generate plots with verbose output
+python helper/visualize_results.py \
+  --results-dir ./evaluation_results \
+  --output-dir ./plots \
+  -v
+```
+
+#### Arguments
+
+| Argument | Default | Description |
+|----------|---------|-------------|
+| `--results-dir` | None | Directory containing evaluation result JSON files |
+| `--results-files` | None | Specific JSON result files to visualize |
+| `--output-dir` | `plots` | Output directory for generated plots |
+| `-v, --verbose` | False | Show detailed progress |
+
+#### Generated Plots
+
+- **method_comparison.png**: Bar charts comparing methods across FID, LPIPS, SSIM, PSNR, and semantic metrics
+- **metric_distributions.png**: Box plots showing distribution of each metric across methods
+- **metric_correlations.png**: Heatmap showing correlations between different metrics
+- **method_radar_comparison.png**: Radar plot for multi-metric method comparison (normalized)
+- **metric_scatter_matrix.png**: Scatter plots and histograms showing relationships between metrics
+- **{metric}_domain_comparison.png**: Domain-wise heatmaps for each metric (one per metric)
+- **visualization_summary.txt**: Text summary of generated visualizations and statistics
+
+#### Dependencies
+
+Requires matplotlib and seaborn:
+```bash
+pip install matplotlib seaborn pandas numpy
+```
+
+---
+
 ## Other Helper Scripts
 
 | Script | Description |
 |--------|-------------|
+| `summarize_results.py` | Aggregate and rank evaluation results with Composite Quality Score (CQS) |
+| `visualize_results.py` | Generate comprehensive diagrams and visualizations from evaluation results |
 | `prepare_evaluation_manifest.py` | Create evaluation manifests for specific method/domain combinations |
 | `adjust_bounding_boxes.py` | Adjust annotation bounding boxes for resized images |
 | `center_crop_images.py` | Center-crop images to target dimensions |
