@@ -472,21 +472,49 @@ If you use PRISM in your research, please cite:
 
 ### Summarizing Results
 
-The `summarize_results.py` script is used to aggregate and analyze evaluation results, including calculating a Composite Quality Score (CQS) for ranking models. It supports multiple output formats such as JSON, Markdown, and CSV.
+The `helper/summarize_results.py` script is used to aggregate and analyze evaluation results, including calculating a Composite Quality Score (CQS) for ranking models.
 
 #### Usage
 
 ```bash
-python summarize_results.py \
-  --input ./path/to/evaluation_results.json \
-  --output-json summary.json \
-  --output-md summary.md \
-  --output-csv summary.csv
+# Summarize all results in a directory
+python helper/summarize_results.py --results-dir ./results
+
+# Summarize specific result files
+python helper/summarize_results.py \
+  --results-files result1.json result2.json result3.json \
+  --output summary.json
 ```
 
 #### Features
-- **Input**: Accepts JSON files containing evaluation results.
-- **Output**: Generates summaries in JSON, Markdown, and CSV formats.
-- **Composite Quality Score (CQS)**: Calculates a normalized score to rank models based on multiple metrics.
+- **Input**: Accepts directories of JSON result files or individual files
+- **Output**: Generates JSON reports with method rankings and statistics
+- **Composite Quality Score (CQS)**: Weighted combination of FID, LPIPS, SSIM, PSNR, and semantic metrics for model ranking
 
 This script is particularly useful for comparing the performance of different models or configurations in a standardized way.
+
+### Visualizing Results
+
+The `helper/visualize_results.py` script generates comprehensive diagrams and visualizations from evaluation results using matplotlib and seaborn.
+
+#### Usage
+
+```bash
+# Generate plots for all results in a directory
+python helper/visualize_results.py --results-dir ./results --output-dir ./plots
+
+# Visualize specific result files
+python helper/visualize_results.py \
+  --results-files result1.json result2.json \
+  --output-dir ./visualizations
+```
+
+#### Generated Visualizations
+- **Method comparison plots**: Bar charts comparing methods across all metrics
+- **Metric distributions**: Box plots showing value distributions
+- **Correlation heatmaps**: Relationships between different metrics
+- **Domain-wise analysis**: Heatmaps showing metrics across weather domains
+- **Radar plots**: Multi-dimensional method comparison
+- **Scatter plot matrices**: Pairwise metric relationships
+
+The script saves all plots as PNG files and generates a summary report.
