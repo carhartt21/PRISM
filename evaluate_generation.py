@@ -967,7 +967,7 @@ def parse_args() -> argparse.Namespace:
                    help="Metrics to compute (plugins).")
     p.add_argument("-b", "--batch-size", type=int, default=64,
                    help="Batch size for metric computation.")
-    p.add_argument("--device", choices=["cpu", "cuda", "auto"], default="auto",
+    p.add_argument("--device", choices=["cpu", "cuda", "auto", "cuda:0", "cuda:1", "cuda:2", "cuda:3"], default="auto",
                    help="Computation device.")
     p.add_argument("--pairs", choices=["auto", "csv"], default="auto",
                    help="Pairing strategy: filename matching or CSV manifest.")
@@ -985,7 +985,7 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--semantic-model",
                    choices=sorted(SEGFORMER_MODEL_MAP.keys()),
                    help="SegFormer backbone variant (default segformer-b5).")
-    p.add_argument("--semantic-device", choices=["cpu", "cuda", "auto"],
+    p.add_argument("--semantic-device", choices=["cpu", "cuda", "auto", "cuda:0", "cuda:1", "cuda:2", "cuda:3"],
                    help="Device for semantic consistency evaluator (defaults to --device or auto).")
     p.add_argument("--semantic-batch-size", type=int, default=16,
                    help="Batch size for semantic consistency (SegFormer). Adjust based on GPU memory.")

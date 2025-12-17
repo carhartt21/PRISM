@@ -193,14 +193,23 @@ python evaluate_generation.py \
 
 #### Automated Manifest Generation
 
-For large-scale evaluation with multiple methods and domains, use the manifest generation scripts in the `helper/` directory:
+For large-scale evaluation with multiple methods and domains, use the unified manifest generation script in the `helper/` directory:
 
 ```bash
 # Generate manifests for all methods
-python helper/generate_all_manifests.py \
+python helper/generate_manifest.py --all \
   --generated-base /path/to/GENERATED_IMAGES \
   --original /path/to/originals \
-  --output-dir ./manifests
+  --output ./manifests
+
+# Generate manifests only for methods without existing manifests
+python helper/generate_manifest.py --all-missing
+
+# Generate manifest for a single method
+python helper/generate_manifest.py \
+  --generated /path/to/GENERATED_IMAGES/CUT \
+  --original /path/to/originals \
+  -o ./manifests/CUT
 
 # Generate a comprehensive report
 python helper/generate_manifest_report.py \

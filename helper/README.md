@@ -4,9 +4,15 @@ This directory contains utility scripts for preprocessing and manifest generatio
 
 ## Manifest Generation Scripts
 
-### `generate_all_manifests.py`
+### `generate_manifest.py`
 
-Generates manifest files for all method directories in a generated images folder. Manifests map generated images to their original source images and include metadata for evaluation.
+**Unified manifest generation script** for image-to-image translation evaluation. Creates CSV and JSON manifests that map generated images to their original counterparts, with support for both single method and batch processing.
+
+#### Modes
+
+- **Single method**: `--generated <path>` - Generate manifest for one specific method
+- **All methods**: `--all` - Generate manifests for all methods in GENERATED_IMAGES
+- **Missing only**: `--all-missing` - Generate manifests only for methods without existing manifests
 
 #### Features
 
@@ -17,11 +23,12 @@ Generates manifest files for all method directories in a generated images folder
 - **Domain normalization**: Maps varied naming conventions to canonical domains
 - **Task type detection**: Distinguishes generation tasks (clear→adverse) from restoration tasks (adverse→clear)
 - **Dataset mapping**: Automatically identifies source datasets (ACDC, BDD100k, etc.)
+- **Filename normalization**: Removes generation suffixes (_fake, _translated, etc.) and dataset prefixes
 
 #### Canonical Domains
 
 **Generation domains** (clear → adverse weather):
-- `snowy`, `rainy`, `foggy`, `night`, `cloudy`, `dawn_dusk`
+- `snowy`, `rainy`, `foggy`, `night`, `cloudy`, `dawn_dusk`, `clear_day`
 
 **Restoration domains** (adverse → clear):
 - `derained` (source: rainy)
@@ -32,32 +39,45 @@ Generates manifest files for all method directories in a generated images folder
 #### Usage
 
 ```bash
-# Process all methods with default paths
-python helper/generate_all_manifests.py
+# Single method mode
+python helper/generate_manifest.py \
+  --generated /path/to/GENERATED_IMAGES/CUT \
+  --original /path/to/original/images \
+  --target /path/to/target/domain \
+  -o ./manifests/CUT
 
-# Custom paths
-python helper/generate_all_manifests.py \
+# Process all methods
+python helper/generate_manifest.py --all
+
+# Process only methods without existing manifests
+python helper/generate_manifest.py --all-missing
+
+# Custom paths with all mode
+python helper/generate_manifest.py --all \
   --generated-base /path/to/GENERATED_IMAGES \
   --original /path/to/original/images \
   --target /path/to/target/domain \
-  --output-dir ./manifests
+  --output ./manifests
 
 # Process specific methods only
-python helper/generate_all_manifests.py --methods cycleGAN stargan_v2
+python helper/generate_manifest.py --all --methods cycleGAN stargan_v2
 
 # Dry run (show what would be done)
-python helper/generate_all_manifests.py --dry-run -v
+python helper/generate_manifest.py --all --dry-run -v
 ```
 
 #### Arguments
 
 | Argument | Default | Description |
 |----------|---------|-------------|
-| `--generated-base` | `/scratch/.../GENERATED_IMAGES` | Base directory containing method subdirectories |
+| `--generated` | - | Generated images directory (single method mode) |
+| `--generated-base` | `/scratch/.../GENERATED_IMAGES` | Base directory containing method subdirectories (--all modes) |
 | `--original` | `/scratch/.../FINAL_SPLITS/train/images` | Directory containing original source images |
 | `--target` | `/scratch/.../AWACS/train` | Target domain images for FID reference |
-| `--output-dir` | (method directories) | Output directory for manifests |
-| `--methods` | (all) | Specific methods to process |
+| `-o, --output` | (generated directory) | Output directory for manifest files |
+| `--all` | - | Process all methods in generated-base |
+| `--all-missing` | - | Process only methods without existing manifests |
+| `--methods` | (all) | Specific methods to process (with --all modes) |
 | `-v, --verbose` | False | Show detailed progress |
 | `--dry-run` | False | Preview without writing files |
 
@@ -275,9 +295,10 @@ pip install matplotlib seaborn pandas numpy
 |--------|-------------|
 | `summarize_results.py` | Aggregate and rank evaluation results with Composite Quality Score (CQS) |
 | `visualize_results.py` | Generate comprehensive diagrams and visualizations from evaluation results |
-| `prepare_evaluation_manifest.py` | Create evaluation manifests for specific method/domain combinations |
 | `adjust_bounding_boxes.py` | Adjust annotation bounding boxes for resized images |
 | `center_crop_images.py` | Center-crop images to target dimensions |
 | `count_images_per_folder.py` | Count images in directory hierarchies |
 | `flatten_domain_hierarchy.py` | Reorganize nested domain/dataset structures |
 | `test_lpips_extraction.py` | Test LPIPS feature extraction |
+
+**Note**: `prepare_evaluation_manifest.py` and `generate_all_manifests.py` have been unified into `generate_manifest.py`.

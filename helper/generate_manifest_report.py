@@ -69,7 +69,7 @@ def generate_method_section(name: str, data: Dict, detailed: bool = False) -> Li
     
     # Domains
     domains = data.get("domains", {})
-    if domains:
+    if domains and isinstance(domains, dict):
         lines.append(f"├{'─' * 78}┤")
         lines.append(f"│ {'DOMAINS':<76} │")
         lines.append(f"├{'─' * 78}┤")
@@ -162,7 +162,12 @@ def generate_domain_summary(manifests: Dict[str, Dict]) -> List[str]:
     restoration_domains = defaultdict(lambda: {"total": 0, "matched": 0, "methods": set(), "source": None})
     
     for name, data in manifests.items():
-        for domain, domain_data in data.get("domains", {}).items():
+        if not isinstance(data, dict):
+            continue
+        domains = data.get("domains", {})
+        if not isinstance(domains, dict):
+            continue
+        for domain, domain_data in domains.items():
             is_restoration = domain_data.get("is_restoration", False)
             
             if is_restoration:

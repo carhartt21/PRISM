@@ -33,7 +33,7 @@ done
 
 # Default models if none provided (edit as needed)
 if [ ${#models[@]} -eq 0 ]; then
-  models=(cnet_seg Img2Img IP2P stargan_v2 UniControl)
+  models=(CUT)
   echo "No models provided; defaulting to: ${models[*]}"
 fi
 
@@ -43,17 +43,30 @@ BSUB_BASE=( -gpu "${GPUSPEC}" -q "${QUEUE}" -R "span[hosts=1]" -n 6 -L /bin/bash
 for model in "${models[@]}"; do
   # Sanitize jobname (only alnum + underscore)
   jobname="eval_${model//[^a-zA-Z0-9_]/_}"
-  out_log="lsf_${jobname}_%J_gpu.log"
-  err_log="lsf_${jobname}_%J_gpu.err"
+  out_log="logs/lsf_${jobname}_%J_gpu.log"
+  err_log="logs/lsf_${jobname}_%J_gpu.err"
 
   # Build command to run: call the run_evaluation script with model as arg
-  # Forward any extra args safely by escaping each arg with printf %q
-  extra_str=""
+  # Special handling for --regenerate-manifest which must be first arg
+  cmd_parts=()
+  if [[ " ${extra_args[*]} " =~ " --regenerate-manifest " ]]; then
+    cmd_parts+=("--regenerate-manifest" "$model")
+  else
+    cmd_parts+=("$model")
+  fi
+  
+  # Add remaining extra args
   for arg in "${extra_args[@]:-}"; do
-    extra_str+=" $(printf '%q' "$arg")"
+    if [[ "$arg" != "--regenerate-manifest" ]]; then
+      cmd_parts+=("$arg")
+    fi
   done
 
-  cmd="bash scripts/run_evaluation ${model}${extra_str}"
+  # Build final command string with proper quoting
+  cmd="bash scripts/run_evaluation"
+  for part in "${cmd_parts[@]}"; do
+    cmd+=" $(printf '%q' "$part")"
+  done
 
   echo "Submitting job for model='${model}' -> jobname='${jobname}'"
   echo "  bsub -gpu \"${GPUSPEC}\" -q ${QUEUE} -R \"span[hosts=1]\" -n 6 -oo \"${out_log}\" -eo \"${err_log}\" -L /bin/bash -J \"${jobname}\" \"${cmd}\""
