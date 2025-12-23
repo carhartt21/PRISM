@@ -162,7 +162,7 @@ python3 evaluate_generation.py \
     --stats-dir "$STATS_DIR" \
     --pairs csv \
     --manifest "$MANIFEST_FILE" \
-    --metrics fid ssim lpips \
+    --metrics fid ssim lpips psnr \
     --semantic-consistency \
     --per-domain \
     --device "$DEVICE" \
