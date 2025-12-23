@@ -145,3 +145,5 @@ results/
 colored_labels*/
 cache/
 stats/
+manifests/
+logs/

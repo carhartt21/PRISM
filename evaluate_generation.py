@@ -260,21 +260,30 @@ def load_fid_stats(stats_path: Path) -> Dict[str, np.ndarray]:
 def extract_target_domain(domain_name: str) -> str:
     """Extract the target domain name from a translation folder name.
     
-    Handles folder names like 'sunny_day2cloudy' where the target domain is 'cloudy'.
-    The delimiter '2' separates source from target domain.
+    Handles folder names with various patterns:
+    - 'sunny_day2cloudy' (delimiter '2') → 'cloudy'
+    - 'clear_day_to_cloudy' (delimiter '_to_') → 'cloudy'
+    - 'cloudy' (no delimiter) → 'cloudy'
     
     Args:
-        domain_name: The full domain/folder name (e.g., 'sunny_day2cloudy' or 'cloudy')
+        domain_name: The full domain/folder name (e.g., 'sunny_day2cloudy', 'clear_day_to_cloudy', or 'cloudy')
         
     Returns:
         The target domain name (e.g., 'cloudy')
     """
+    # Try '_to_' delimiter first (e.g., 'clear_day_to_cloudy')
+    if '_to_' in domain_name:
+        parts = domain_name.split('_to_', 1)
+        if len(parts) > 1 and parts[1]:
+            return parts[1]
+    
+    # Try '2' delimiter (e.g., 'sunny_day2cloudy')
     if '2' in domain_name:
-        # Split on '2' and take the part after it
         parts = domain_name.split('2', 1)
         if len(parts) > 1 and parts[1]:
             return parts[1]
-    # No '2' delimiter or nothing after it; return original name
+    
+    # No delimiter found; return original name
     return domain_name
 
 
@@ -295,6 +304,53 @@ def discover_domains(root_dir: Path) -> List[str]:
         if find_image_files(root_dir):
             return ["_root"]
     return sorted(domains)
+
+
+def discover_domains_from_manifest(manifest_path: Path) -> List[str]:
+    """Discover unique target domains from a CSV manifest file.
+    
+    Reads the 'target_domain' or 'domain' column from the manifest CSV
+    and returns a sorted list of unique domain values.
+    
+    This is preferred over folder-based discovery when using CSV manifests,
+    as it correctly identifies weather domains (cloudy, foggy, etc.) even
+    when the folder structure uses dataset names (ACDC, BDD100k, etc.).
+    
+    Args:
+        manifest_path: Path to the CSV manifest file
+        
+    Returns:
+        Sorted list of unique domain names found in the manifest
+    """
+    if not manifest_path.exists():
+        logging.warning("Manifest file not found: %s", manifest_path)
+        return []
+    
+    import csv
+    domains = set()
+    
+    with open(manifest_path, 'r') as f:
+        reader = csv.DictReader(f)
+        fieldnames = reader.fieldnames or []
+        
+        # Prefer 'target_domain' column, fall back to 'domain'
+        domain_column = None
+        if 'target_domain' in fieldnames:
+            domain_column = 'target_domain'
+        elif 'domain' in fieldnames:
+            domain_column = 'domain'
+        else:
+            logging.warning("Manifest %s has no 'target_domain' or 'domain' column", manifest_path)
+            return []
+        
+        for row in reader:
+            domain_value = row.get(domain_column, '').strip()
+            if domain_value:
+                domains.add(domain_value)
+    
+    result = sorted(domains)
+    logging.info("Discovered %d domains from manifest: %s", len(result), result)
+    return result
 
 
 def save_domain_stats(stats: Dict[str, Any], output_path: Path) -> None:
@@ -1336,8 +1392,17 @@ def main() -> None:
     # Per-domain or flat evaluation
     # --------------------------------------------------------------------------
     if args.per_domain:
-        # Discover domains (subfolders) in generated directory
-        domains = discover_domains(args.generated)
+        # Discover domains: prefer manifest-based discovery for CSV mode
+        # This correctly identifies weather domains even when folder structure uses dataset names
+        if args.pairs == "csv" and args.manifest and args.manifest.exists():
+            domains = discover_domains_from_manifest(args.manifest)
+            if not domains:
+                # Fall back to folder-based discovery
+                logging.warning("No domains found in manifest; falling back to folder-based discovery")
+                domains = discover_domains(args.generated)
+        else:
+            domains = discover_domains(args.generated)
+        
         if not domains:
             logging.error("No domains found in %s", args.generated)
             sys.exit(1)
@@ -1350,6 +1415,9 @@ def main() -> None:
             "domains": {},
         }
 
+        # Track whether we're using manifest-based domain discovery
+        using_manifest_domains = args.pairs == "csv" and args.manifest and args.manifest.exists()
+
         for domain in tqdm(domains, desc="Domains"):
             # Resolve directories for this domain
             if domain == "_root":
@@ -1357,6 +1425,21 @@ def main() -> None:
                 original_domain_dir = args.original
                 target_domain_dir = target_dir
                 domain_fid_stats = fid_stats_path
+            elif using_manifest_domains:
+                # When using manifest-based discovery, domains are weather domains (cloudy, foggy, etc.)
+                # The manifest handles filtering by domain, so we use root directories
+                gen_domain_dir = args.generated  # Manifest will filter to this domain
+                original_domain_dir = args.original
+                # The domain IS the target domain (already a weather domain)
+                target_domain_name = domain
+                target_domain_dir = target_dir / target_domain_name if target_dir else None
+                # FID stats are named by weather domain
+                domain_fid_stats = args.stats_dir / f"{target_domain_name}_fid.npz" if args.stats_dir else None
+                if domain_fid_stats and not domain_fid_stats.exists():
+                    domain_fid_stats = fid_stats_path  # fall back to global
+                
+                logging.debug("[%s] (manifest mode) Target domain: %s, Target dir: %s, FID stats: %s",
+                             domain, target_domain_name, target_domain_dir, domain_fid_stats)
             else:
                 gen_domain_dir = args.generated / domain
                 # Original images are matched by filename from the root original directory
