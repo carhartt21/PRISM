@@ -148,3 +148,4 @@ stats/
 manifests/
 logs/
 reports/
+helper/.deprecated/README.md

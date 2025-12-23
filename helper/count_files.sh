@@ -1,13 +1,13 @@
 #!/bin/bash
-"""
-Count files per subfolder in a directory using shell commands.
-
-Usage:
-    ./count_files.sh --root /path/to/directory [--recursive] [--extensions jpg png] [--format csv|json|plain] [--output file]
-
-Example:
-    ./count_files.sh --root /scratch/aaa_exchange/AWARE/GENERATED_IMAGES/cycleGAN --recursive --format csv
-"""
+#
+# Count files per subfolder in a directory using shell commands.
+#
+# Usage:
+#     ./count_files.sh --root /path/to/directory [--recursive] [--extensions jpg png] [--format csv|json|plain] [--output file] [--aggregate]
+#
+# Example:
+#     ./count_files.sh --root /scratch/aaa_exchange/AWARE/GENERATED_IMAGES/cycleGAN --recursive --format csv
+#
 
 # Parse arguments
 ROOT=""
@@ -15,6 +15,7 @@ RECURSIVE=false
 EXTENSIONS=()
 FORMAT="plain"
 OUTPUT=""
+AGGREGATE=false
 
 while [[ $# -gt 0 ]]; do
   case $1 in
@@ -41,9 +42,13 @@ while [[ $# -gt 0 ]]; do
       OUTPUT="$2"
       shift 2
       ;;
+    --aggregate)
+      AGGREGATE=true
+      shift
+      ;;
     *)
       echo "Unknown option: $1"
-      echo "Usage: $0 --root <dir> [--recursive] [--extensions ext1 ext2] [--format plain|csv|json] [--output file]"
+      echo "Usage: $0 --root <dir> [--recursive] [--extensions ext1 ext2] [--format plain|csv|json] [--output file] [--aggregate]"
       exit 1
       ;;
   esac
@@ -77,16 +82,17 @@ declare -A counts
 
 if [ "$RECURSIVE" = true ]; then
   # Recursive: find all files, group by dirname
+  tempfile=$(mktemp)
   if [ ${#EXTENSIONS[@]} -gt 0 ]; then
     names=$(build_names)
-    find "$ROOT" -type f \( $names \) -printf '%h\n' | sort | uniq -c | awk '{print $2 "," $1}' | while IFS=',' read -r folder count; do
-      counts["$folder"]=$count
-    done
+    eval "find \"$ROOT\" -type f \( $names \) -printf '%h\n'" | sort | uniq -c | awk '{print $2 "," $1}' > "$tempfile"
   else
-    find "$ROOT" -type f -printf '%h\n' | sort | uniq -c | awk '{print $2 "," $1}' | while IFS=',' read -r folder count; do
-      counts["$folder"]=$count
-    done
+    find "$ROOT" -type f -printf '%h\n' | sort | uniq -c | awk '{print $2 "," $1}' > "$tempfile"
   fi
+  while IFS=',' read -r folder count; do
+    counts["$folder"]=$count
+  done < "$tempfile"
+  rm "$tempfile"
 else
   # Non-recursive: count in immediate subfolders
   for d in "$ROOT"/*/; do
@@ -102,6 +108,50 @@ else
     fi
   done
 fi
+
+if [ "$AGGREGATE" = true ]; then
+  declare -A aggregated
+  # Get immediate subdirs
+  subs=()
+  for d in "$ROOT"/*/; do
+    if [ -d "$d" ]; then
+      subs+=("${d%/}")
+    fi
+  done
+  # Normalize paths (remove double slashes)
+  for i in "${!subs[@]}"; do
+    subs[$i]=$(echo "${subs[$i]}" | sed 's|//|/|g')
+  done
+  # For each sub, sum counts of relative paths
+  for sub in "${subs[@]}"; do
+    total=0
+    for folder in "${!counts[@]}"; do
+      if [[ "$folder" == "$sub"* ]]; then
+        total=$((total + counts[$folder]))
+      fi
+    done
+    aggregated["$sub"]=$total
+  done
+  # Replace counts with aggregated
+  unset counts
+  declare -A counts
+  for key in "${!aggregated[@]}"; do
+    counts["$key"]=${aggregated[$key]}
+  done
+fi
+
+# Convert to relative paths
+declare -A counts_relative
+for folder in "${!counts[@]}"; do
+  relative=${folder#$ROOT}
+  relative=${relative#/}
+  counts_relative["$relative"]=${counts[$folder]}
+done
+unset counts
+declare -A counts
+for key in "${!counts_relative[@]}"; do
+  counts["$key"]=${counts_relative[$key]}
+done
 
 # Output
 output() {

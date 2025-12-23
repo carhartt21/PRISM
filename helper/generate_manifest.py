@@ -172,6 +172,22 @@ def normalize_domain(domain_name: str) -> Optional[str]:
             if target.lower() in all_canonical:
                 return target.lower()
     
+    # Try extracting target from "_to_" pattern (e.g., "clear_day_to_cloudy")
+    if '_to_' in domain_name:
+        parts = domain_name.split('_to_', 1)
+        if len(parts) > 1:
+            target = parts[1]
+            if target in DOMAIN_MAPPING:
+                return DOMAIN_MAPPING[target]
+            if target.lower() in DOMAIN_MAPPING:
+                return DOMAIN_MAPPING[target.lower()]
+            # Check if target is already canonical
+            all_canonical = CANONICAL_GENERATION_DOMAINS | CANONICAL_RESTORATION_DOMAINS
+            if target in all_canonical:
+                return target
+            if target.lower() in all_canonical:
+                return target.lower()
+    
     # Check if it's already a canonical domain
     all_canonical = CANONICAL_GENERATION_DOMAINS | CANONICAL_RESTORATION_DOMAINS
     if domain_name in all_canonical:
@@ -188,6 +204,10 @@ def extract_source_domain(domain_name: str) -> Optional[str]:
         parts = domain_name.split('2', 1)
         if parts[0]:
             return parts[0]
+    if '_to_' in domain_name:
+        parts = domain_name.split('_to_', 1)
+        if parts[0]:
+            return parts[0]
     return None
 
 
@@ -195,6 +215,10 @@ def extract_target_domain(domain_name: str) -> str:
     """Extract target domain from translation folder name (e.g., 'clear_day2cloudy' -> 'cloudy')."""
     if '2' in domain_name:
         parts = domain_name.split('2', 1)
+        if len(parts) > 1 and parts[1]:
+            return parts[1]
+    if '_to_' in domain_name:
+        parts = domain_name.split('_to_', 1)
         if len(parts) > 1 and parts[1]:
             return parts[1]
     return domain_name
