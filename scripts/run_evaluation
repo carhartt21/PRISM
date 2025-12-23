@@ -12,10 +12,31 @@
 # Generated: The generated/translated images to evaluate
 GENERATED_ROOT_DIR="/scratch/aaa_exchange/AWARE/GENERATED_IMAGES"
 
-if [ "$1" == "--regenerate-manifest" ]; then
-    MODEL="${2:-CUT}"
-else
-    MODEL="${1:-CUT}"
+# Parse arguments
+REGENERATE_MANIFEST=false
+MODEL=""
+DEVICE="cuda"
+
+while [[ $# -gt 0 ]]; do
+    case $1 in
+        --regenerate-manifest)
+            REGENERATE_MANIFEST=true
+            shift
+            ;;
+        --device)
+            DEVICE="$2"
+            shift 2
+            ;;
+        *)
+            MODEL="$1"
+            shift
+            ;;
+    esac
+done
+
+if [ -z "$MODEL" ]; then
+    echo "Usage: $0 [MODEL] [--device DEVICE] [--regenerate-manifest]"
+    exit 1
 fi
 
 GENERATED_DIR="${GENERATED_ROOT_DIR}/${MODEL}"
@@ -29,8 +50,15 @@ TARGET_DIR="/scratch/aaa_exchange/AWARE/AWACS/train"
 # Statistics directory (contains precomputed FID stats, segmentation, LPIPS features)
 STATS_DIR="/scratch/aaa_exchange/AWARE/STATS/"
 
-# Manifest file (created by preprocessing step)
-MANIFEST_FILE="manifests/${MODEL}/manifest.csv"
+# Manifest file locations (try generated dir first, then local manifests dir)
+MANIFEST_FILE="${GENERATED_DIR}/manifest.csv"
+LOCAL_MANIFEST_FILE="manifests/${MODEL}/manifest.csv"
+
+# Use local manifest if it exists and the generated one doesn't
+if [ ! -f "$MANIFEST_FILE" ] && [ -f "$LOCAL_MANIFEST_FILE" ]; then
+    echo "Using local manifest: $LOCAL_MANIFEST_FILE"
+    MANIFEST_FILE="$LOCAL_MANIFEST_FILE"
+fi
 
 # Output file for evaluation results
 OUTPUT_FILE="${MODEL}_evaluation_results.json"
@@ -52,20 +80,73 @@ echo ""
 
 source venv/bin/activate
 
-# Step 1: Create manifest (if not exists or force regenerate)
-if [ ! -f "$MANIFEST_FILE" ] || [ "$1" == "--regenerate-manifest" ]; then
-    echo "Step 1: Creating evaluation manifest..."
+# Helper function: count images in directory (recursive)
+count_images_in_dir() {
+    local dir="$1"
+    find "$dir" -type f \( -iname "*.png" -o -iname "*.jpg" -o -iname "*.jpeg" -o -iname "*.webp" \) 2>/dev/null | wc -l
+}
+
+# Helper function: count entries in manifest (excluding header)
+count_manifest_entries() {
+    local manifest="$1"
+    if [ -f "$manifest" ]; then
+        # Subtract 1 for header row
+        echo $(( $(wc -l < "$manifest") - 1 ))
+    else
+        echo 0
+    fi
+}
+
+# Step 1: Create manifest (if not exists, force regenerate, or count mismatch)
+NEED_REGENERATE=false
+
+if [ ! -f "$MANIFEST_FILE" ]; then
+    echo "Step 1: Manifest not found, will create..."
+    NEED_REGENERATE=true
+elif [ "$REGENERATE_MANIFEST" = true ]; then
+    echo "Step 1: Force regenerate requested..."
+    NEED_REGENERATE=true
+else
+    # Check if manifest count matches directory count
+    DIR_COUNT=$(count_images_in_dir "$GENERATED_DIR")
+    MANIFEST_COUNT=$(count_manifest_entries "$MANIFEST_FILE")
+    
+    echo "Step 1: Checking manifest consistency..."
+    echo "  Images in directory: $DIR_COUNT"
+    echo "  Entries in manifest: $MANIFEST_COUNT"
+    
+    if [ "$DIR_COUNT" -ne "$MANIFEST_COUNT" ]; then
+        echo "  WARNING: Count mismatch detected! Regenerating manifest..."
+        NEED_REGENERATE=true
+    else
+        echo "  OK: Counts match, using existing manifest"
+    fi
+fi
+
+if [ "$NEED_REGENERATE" = true ]; then
+    echo "Creating evaluation manifest..."
+    # Generate manifest to the generated directory (primary location)
+    MANIFEST_OUTPUT_DIR="${GENERATED_DIR}"
+    # If we can't write there, use local manifests directory
+    if [ ! -w "$MANIFEST_OUTPUT_DIR" ]; then
+        MANIFEST_OUTPUT_DIR="manifests/${MODEL}"
+        mkdir -p "$MANIFEST_OUTPUT_DIR"
+    fi
+    
     python3 helper/generate_manifest.py \
         --generated "$GENERATED_DIR" \
         --original "$ORIGINAL_DIR" \
         --target "$TARGET_DIR" \
-        -o "$(dirname "$MANIFEST_FILE")" \
+        -o "$MANIFEST_OUTPUT_DIR" \
         --verbose
     
     if [ $? -ne 0 ]; then
         echo "Error: Manifest creation failed"
         exit 1
     fi
+    
+    # Update MANIFEST_FILE to the newly created manifest
+    MANIFEST_FILE="${MANIFEST_OUTPUT_DIR}/manifest.csv"
     echo ""
 else
     echo "Step 1: Using existing manifest: $MANIFEST_FILE"
@@ -73,7 +154,7 @@ else
 fi
 
 # Step 2: Run evaluation using the manifest
-echo "Step 2: Running evaluation..."
+echo "Step 2: Running evaluation on device: $DEVICE"
 python3 evaluate_generation.py \
     --generated "$GENERATED_DIR" \
     --original "$ORIGINAL_DIR" \
@@ -84,8 +165,8 @@ python3 evaluate_generation.py \
     --metrics fid ssim lpips \
     --semantic-consistency \
     --per-domain \
-    --device cuda \
-    --semantic-device cuda \
+    --device "$DEVICE" \
+    --semantic-device "$DEVICE" \
     --cache-dir "$CACHE_DIR" \
     --batch-size 64 \
     --semantic-batch-size 16 \
