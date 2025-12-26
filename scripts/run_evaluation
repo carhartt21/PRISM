@@ -27,6 +27,10 @@ while [[ $# -gt 0 ]]; do
             DEVICE="$2"
             shift 2
             ;;
+        "")
+            # Skip empty arguments
+            shift
+            ;;
         *)
             MODEL="$1"
             shift

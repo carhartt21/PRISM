@@ -55,12 +55,14 @@ for model in "${models[@]}"; do
     cmd_parts+=("$model")
   fi
   
-  # Add remaining extra args
-  for arg in "${extra_args[@]:-}"; do
-    if [[ "$arg" != "--regenerate-manifest" ]]; then
-      cmd_parts+=("$arg")
-    fi
-  done
+  # Add remaining extra args (only if extra_args is non-empty)
+  if [ ${#extra_args[@]} -gt 0 ]; then
+    for arg in "${extra_args[@]}"; do
+      if [[ -n "$arg" && "$arg" != "--regenerate-manifest" ]]; then
+        cmd_parts+=("$arg")
+      fi
+    done
+  fi
 
   # Build final command string with proper quoting
   cmd="bash scripts/run_evaluation"
