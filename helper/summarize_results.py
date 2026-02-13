@@ -678,6 +678,7 @@ def parse_args() -> argparse.Namespace:
         "--results-dir",
         type=Path,
         help="Directory containing result JSON files.",
+        default="/scratch/aaa_exchange/AWARE/STATS",
     )
     parser.add_argument(
         "--results-files",

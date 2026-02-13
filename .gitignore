@@ -147,5 +147,5 @@ cache/
 stats/
 manifests/
 logs/
-reports/
+#reports/
 helper/.deprecated/README.md
