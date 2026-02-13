@@ -1,0 +1,1564 @@
+{
+  "generated_root": "/scratch/aaa_exchange/AWARE/GENERATED_IMAGES",
+  "total_models": 26,
+  "models": {
+    "AOD-Net": {
+      "name": "AOD-Net",
+      "path": "/scratch/aaa_exchange/AWARE/GENERATED_IMAGES/AOD-Net",
+      "actual_image_count": 547,
+      "manifest_exists": true,
+      "manifest_entries": 270,
+      "count_match": false,
+      "by_domain": {
+        "defogged": 270
+      },
+      "by_dataset": {
+        "ACDC": 96,
+        "IDD-AW": 174
+      },
+      "by_domain_dataset": {
+        "defogged": {
+          "ACDC": 96,
+          "IDD-AW": 174
+        }
+      },
+      "manifest_location": "/home/mima2416/repositories/PRISM/manifests/AOD-Net/manifest.csv"
+    },
+    "Attribute_Hallucination": {
+      "name": "Attribute_Hallucination",
+      "path": "/scratch/aaa_exchange/AWARE/GENERATED_IMAGES/Attribute_Hallucination",
+      "actual_image_count": 191400,
+      "manifest_exists": true,
+      "manifest_entries": 191400,
+      "count_match": true,
+      "by_domain": {
+        "cloudy": 31900,
+        "dawn_dusk": 31900,
+        "foggy": 31900,
+        "night": 31900,
+        "rainy": 31900,
+        "snowy": 31900
+      },
+      "by_dataset": {
+        "ACDC": 4206,
+        "BDD100k": 79992,
+        "BDD10k": 14220,
+        "IDD-AW": 23082,
+        "MapillaryVistas": 45162,
+        "OUTSIDE15k": 24738
+      },
+      "by_domain_dataset": {
+        "cloudy": {
+          "ACDC": 701,
+          "BDD100k": 13332,
+          "BDD10k": 2370,
+          "IDD-AW": 3847,
+          "MapillaryVistas": 7527,
+          "OUTSIDE15k": 4123
+        },
+        "dawn_dusk": {
+          "ACDC": 701,
+          "BDD100k": 13332,
+          "BDD10k": 2370,
+          "IDD-AW": 3847,
+          "MapillaryVistas": 7527,
+          "OUTSIDE15k": 4123
+        },
+        "foggy": {
+          "ACDC": 701,
+          "BDD100k": 13332,
+          "BDD10k": 2370,
+          "IDD-AW": 3847,
+          "MapillaryVistas": 7527,
+          "OUTSIDE15k": 4123
+        },
+        "night": {
+          "ACDC": 701,
+          "BDD100k": 13332,
+          "BDD10k": 2370,
+          "IDD-AW": 3847,
+          "MapillaryVistas": 7527,
+          "OUTSIDE15k": 4123
+        },
+        "rainy": {
+          "ACDC": 701,
+          "BDD100k": 13332,
+          "BDD10k": 2370,
+          "IDD-AW": 3847,
+          "MapillaryVistas": 7527,
+          "OUTSIDE15k": 4123
+        },
+        "snowy": {
+          "ACDC": 701,
+          "BDD100k": 13332,
+          "BDD10k": 2370,
+          "IDD-AW": 3847,
+          "MapillaryVistas": 7527,
+          "OUTSIDE15k": 4123
+        }
+      },
+      "manifest_location": "/scratch/aaa_exchange/AWARE/GENERATED_IMAGES/Attribute_Hallucination/manifest.csv"
+    },
+    "CNetSeg": {
+      "name": "CNetSeg",
+      "path": "/scratch/aaa_exchange/AWARE/GENERATED_IMAGES/CNetSeg",
+      "actual_image_count": 187398,
+      "manifest_exists": true,
+      "manifest_entries": 187398,
+      "count_match": true,
+      "by_domain": {
+        "cloudy": 31233,
+        "dawn_dusk": 31233,
+        "foggy": 31233,
+        "night": 31233,
+        "rainy": 31233,
+        "snowy": 31233
+      },
+      "by_dataset": {
+        "MapillaryVistas": 45162,
+        "BDD100k": 79992,
+        "IDD-AW": 23082,
+        "BDD10k": 10218,
+        "OUTSIDE15k": 24738,
+        "ACDC": 4206
+      },
+      "by_domain_dataset": {
+        "cloudy": {
+          "MapillaryVistas": 7527,
+          "BDD100k": 13332,
+          "IDD-AW": 3847,
+          "BDD10k": 1703,
+          "OUTSIDE15k": 4123,
+          "ACDC": 701
+        },
+        "dawn_dusk": {
+          "MapillaryVistas": 7527,
+          "BDD100k": 13332,
+          "IDD-AW": 3847,
+          "BDD10k": 1703,
+          "OUTSIDE15k": 4123,
+          "ACDC": 701
+        },
+        "foggy": {
+          "MapillaryVistas": 7527,
+          "BDD100k": 13332,
+          "IDD-AW": 3847,
+          "BDD10k": 1703,
+          "OUTSIDE15k": 4123,
+          "ACDC": 701
+        },
+        "night": {
+          "MapillaryVistas": 7527,
+          "BDD100k": 13332,
+          "IDD-AW": 3847,
+          "BDD10k": 1703,
+          "OUTSIDE15k": 4123,
+          "ACDC": 701
+        },
+        "rainy": {
+          "MapillaryVistas": 7527,
+          "BDD100k": 13332,
+          "IDD-AW": 3847,
+          "BDD10k": 1703,
+          "OUTSIDE15k": 4123,
+          "ACDC": 701
+        },
+        "snowy": {
+          "MapillaryVistas": 7527,
+          "BDD100k": 13332,
+          "IDD-AW": 3847,
+          "BDD10k": 1703,
+          "OUTSIDE15k": 4123,
+          "ACDC": 701
+        }
+      },
+      "manifest_location": "/scratch/aaa_exchange/AWARE/GENERATED_IMAGES/CNetSeg/manifest.csv"
+    },
+    "CUT": {
+      "name": "CUT",
+      "path": "/scratch/aaa_exchange/AWARE/GENERATED_IMAGES/CUT",
+      "actual_image_count": 191400,
+      "manifest_exists": true,
+      "manifest_entries": 191400,
+      "count_match": true,
+      "by_domain": {
+        "cloudy": 31900,
+        "dawn_dusk": 31900,
+        "fog": 31900,
+        "night": 31900,
+        "rainy": 31900,
+        "snowy": 31900
+      },
+      "by_dataset": {
+        "ACDC": 4206,
+        "BDD100k": 79992,
+        "BDD10k": 14220,
+        "IDD-AW": 23082,
+        "MapillaryVistas": 45162,
+        "OUTSIDE15k": 24738
+      },
+      "by_domain_dataset": {
+        "cloudy": {
+          "ACDC": 701,
+          "BDD100k": 13332,
+          "BDD10k": 2370,
+          "IDD-AW": 3847,
+          "MapillaryVistas": 7527,
+          "OUTSIDE15k": 4123
+        },
+        "dawn_dusk": {
+          "ACDC": 701,
+          "BDD100k": 13332,
+          "BDD10k": 2370,
+          "IDD-AW": 3847,
+          "MapillaryVistas": 7527,
+          "OUTSIDE15k": 4123
+        },
+        "fog": {
+          "ACDC": 701,
+          "BDD100k": 13332,
+          "BDD10k": 2370,
+          "IDD-AW": 3847,
+          "MapillaryVistas": 7527,
+          "OUTSIDE15k": 4123
+        },
+        "night": {
+          "ACDC": 701,
+          "BDD100k": 13332,
+          "BDD10k": 2370,
+          "IDD-AW": 3847,
+          "MapillaryVistas": 7527,
+          "OUTSIDE15k": 4123
+        },
+        "rainy": {
+          "ACDC": 701,
+          "BDD100k": 13332,
+          "BDD10k": 2370,
+          "IDD-AW": 3847,
+          "MapillaryVistas": 7527,
+          "OUTSIDE15k": 4123
+        },
+        "snowy": {
+          "ACDC": 701,
+          "BDD100k": 13332,
+          "BDD10k": 2370,
+          "IDD-AW": 3847,
+          "MapillaryVistas": 7527,
+          "OUTSIDE15k": 4123
+        }
+      },
+      "manifest_location": "/scratch/aaa_exchange/AWARE/GENERATED_IMAGES/CUT/manifest.csv"
+    },
+    "EDICT": {
+      "name": "EDICT",
+      "path": "/scratch/aaa_exchange/AWARE/GENERATED_IMAGES/EDICT",
+      "actual_image_count": 64187,
+      "manifest_exists": true,
+      "manifest_entries": 64187,
+      "count_match": true,
+      "by_domain": {
+        "cloudy": 10690,
+        "dawn_dusk": 10664,
+        "foggy": 10721,
+        "night": 10651,
+        "rainy": 10807,
+        "snowy": 10654
+      },
+      "by_dataset": {
+        "BDD100k": 59981,
+        "ACDC": 4206
+      },
+      "by_domain_dataset": {
+        "cloudy": {
+          "BDD100k": 9989,
+          "ACDC": 701
+        },
+        "dawn_dusk": {
+          "BDD100k": 9963,
+          "ACDC": 701
+        },
+        "foggy": {
+          "BDD100k": 10020,
+          "ACDC": 701
+        },
+        "night": {
+          "BDD100k": 9950,
+          "ACDC": 701
+        },
+        "rainy": {
+          "BDD100k": 10106,
+          "ACDC": 701
+        },
+        "snowy": {
+          "BDD100k": 9953,
+          "ACDC": 701
+        }
+      },
+      "manifest_location": "/scratch/aaa_exchange/AWARE/GENERATED_IMAGES/EDICT/manifest.csv"
+    },
+    "IP2P": {
+      "name": "IP2P",
+      "path": "/scratch/aaa_exchange/AWARE/GENERATED_IMAGES/IP2P",
+      "actual_image_count": 187398,
+      "manifest_exists": true,
+      "manifest_entries": 187398,
+      "count_match": true,
+      "by_domain": {
+        "cloudy": 31233,
+        "dawn_dusk": 31233,
+        "foggy": 31233,
+        "night": 31233,
+        "rainy": 31233,
+        "snowy": 31233
+      },
+      "by_dataset": {
+        "MapillaryVistas": 45162,
+        "BDD100k": 79992,
+        "IDD-AW": 23082,
+        "BDD10k": 10218,
+        "OUTSIDE15k": 24738,
+        "ACDC": 4206
+      },
+      "by_domain_dataset": {
+        "cloudy": {
+          "MapillaryVistas": 7527,
+          "BDD100k": 13332,
+          "IDD-AW": 3847,
+          "BDD10k": 1703,
+          "OUTSIDE15k": 4123,
+          "ACDC": 701
+        },
+        "dawn_dusk": {
+          "MapillaryVistas": 7527,
+          "BDD100k": 13332,
+          "IDD-AW": 3847,
+          "BDD10k": 1703,
+          "OUTSIDE15k": 4123,
+          "ACDC": 701
+        },
+        "foggy": {
+          "MapillaryVistas": 7527,
+          "BDD100k": 13332,
+          "IDD-AW": 3847,
+          "BDD10k": 1703,
+          "OUTSIDE15k": 4123,
+          "ACDC": 701
+        },
+        "night": {
+          "MapillaryVistas": 7527,
+          "BDD100k": 13332,
+          "IDD-AW": 3847,
+          "BDD10k": 1703,
+          "OUTSIDE15k": 4123,
+          "ACDC": 701
+        },
+        "rainy": {
+          "MapillaryVistas": 7527,
+          "BDD100k": 13332,
+          "IDD-AW": 3847,
+          "BDD10k": 1703,
+          "OUTSIDE15k": 4123,
+          "ACDC": 701
+        },
+        "snowy": {
+          "MapillaryVistas": 7527,
+          "BDD100k": 13332,
+          "IDD-AW": 3847,
+          "BDD10k": 1703,
+          "OUTSIDE15k": 4123,
+          "ACDC": 701
+        }
+      },
+      "manifest_location": "/scratch/aaa_exchange/AWARE/GENERATED_IMAGES/IP2P/manifest.csv"
+    },
+    "Img2Img": {
+      "name": "Img2Img",
+      "path": "/scratch/aaa_exchange/AWARE/GENERATED_IMAGES/Img2Img",
+      "actual_image_count": 187398,
+      "manifest_exists": true,
+      "manifest_entries": 187398,
+      "count_match": true,
+      "by_domain": {
+        "cloudy": 31233,
+        "dawn_dusk": 31233,
+        "foggy": 31233,
+        "night": 31233,
+        "rainy": 31233,
+        "snowy": 31233
+      },
+      "by_dataset": {
+        "MapillaryVistas": 45162,
+        "BDD100k": 79992,
+        "IDD-AW": 23082,
+        "BDD10k": 10218,
+        "OUTSIDE15k": 24738,
+        "ACDC": 4206
+      },
+      "by_domain_dataset": {
+        "cloudy": {
+          "MapillaryVistas": 7527,
+          "BDD100k": 13332,
+          "IDD-AW": 3847,
+          "BDD10k": 1703,
+          "OUTSIDE15k": 4123,
+          "ACDC": 701
+        },
+        "dawn_dusk": {
+          "MapillaryVistas": 7527,
+          "BDD100k": 13332,
+          "IDD-AW": 3847,
+          "BDD10k": 1703,
+          "OUTSIDE15k": 4123,
+          "ACDC": 701
+        },
+        "foggy": {
+          "MapillaryVistas": 7527,
+          "BDD100k": 13332,
+          "IDD-AW": 3847,
+          "BDD10k": 1703,
+          "OUTSIDE15k": 4123,
+          "ACDC": 701
+        },
+        "night": {
+          "MapillaryVistas": 7527,
+          "BDD100k": 13332,
+          "IDD-AW": 3847,
+          "BDD10k": 1703,
+          "OUTSIDE15k": 4123,
+          "ACDC": 701
+        },
+        "rainy": {
+          "MapillaryVistas": 7527,
+          "BDD100k": 13332,
+          "IDD-AW": 3847,
+          "BDD10k": 1703,
+          "OUTSIDE15k": 4123,
+          "ACDC": 701
+        },
+        "snowy": {
+          "MapillaryVistas": 7527,
+          "BDD100k": 13332,
+          "IDD-AW": 3847,
+          "BDD10k": 1703,
+          "OUTSIDE15k": 4123,
+          "ACDC": 701
+        }
+      },
+      "manifest_location": "/scratch/aaa_exchange/AWARE/GENERATED_IMAGES/Img2Img/manifest.csv"
+    },
+    "LANIT": {
+      "name": "LANIT",
+      "path": "/scratch/aaa_exchange/AWARE/GENERATED_IMAGES/LANIT",
+      "actual_image_count": 223300,
+      "manifest_exists": true,
+      "manifest_entries": 223300,
+      "count_match": true,
+      "by_domain": {
+        "clear_day": 31900,
+        "cloudy": 31900,
+        "dawn_dusk": 31900,
+        "foggy": 31900,
+        "night": 31900,
+        "rainy": 31900,
+        "snowy": 31900
+      },
+      "by_dataset": {
+        "ACDC": 4907,
+        "BDD100k": 97993,
+        "BDD10k": 11921,
+        "IDD-AW": 26929,
+        "MapillaryVistas": 52689,
+        "OUTSIDE15k": 28861
+      },
+      "by_domain_dataset": {
+        "clear_day": {
+          "ACDC": 701,
+          "BDD100k": 13999,
+          "BDD10k": 1703,
+          "IDD-AW": 3847,
+          "MapillaryVistas": 7527,
+          "OUTSIDE15k": 4123
+        },
+        "cloudy": {
+          "ACDC": 701,
+          "BDD100k": 13999,
+          "BDD10k": 1703,
+          "IDD-AW": 3847,
+          "MapillaryVistas": 7527,
+          "OUTSIDE15k": 4123
+        },
+        "dawn_dusk": {
+          "ACDC": 701,
+          "BDD100k": 13999,
+          "BDD10k": 1703,
+          "IDD-AW": 3847,
+          "MapillaryVistas": 7527,
+          "OUTSIDE15k": 4123
+        },
+        "foggy": {
+          "ACDC": 701,
+          "BDD100k": 13999,
+          "BDD10k": 1703,
+          "IDD-AW": 3847,
+          "MapillaryVistas": 7527,
+          "OUTSIDE15k": 4123
+        },
+        "night": {
+          "ACDC": 701,
+          "BDD100k": 13999,
+          "BDD10k": 1703,
+          "IDD-AW": 3847,
+          "MapillaryVistas": 7527,
+          "OUTSIDE15k": 4123
+        },
+        "rainy": {
+          "ACDC": 701,
+          "BDD100k": 13999,
+          "BDD10k": 1703,
+          "IDD-AW": 3847,
+          "MapillaryVistas": 7527,
+          "OUTSIDE15k": 4123
+        },
+        "snowy": {
+          "ACDC": 701,
+          "BDD100k": 13999,
+          "BDD10k": 1703,
+          "IDD-AW": 3847,
+          "MapillaryVistas": 7527,
+          "OUTSIDE15k": 4123
+        }
+      },
+      "manifest_location": "/scratch/aaa_exchange/AWARE/GENERATED_IMAGES/LANIT/manifest.csv"
+    },
+    "NST": {
+      "name": "NST",
+      "path": "/scratch/aaa_exchange/AWARE/GENERATED_IMAGES/NST",
+      "actual_image_count": 41498,
+      "manifest_exists": true,
+      "manifest_entries": 41498,
+      "count_match": true,
+      "by_domain": {
+        "cloudy": 23058,
+        "dawn_dusk": 18440
+      },
+      "by_dataset": {
+        "MapillaryVistas": 9164,
+        "BDD100k": 20523,
+        "IDD-AW": 5298,
+        "BDD10k": 2402,
+        "OUTSIDE15k": 3098,
+        "ACDC": 1013
+      },
+      "by_domain_dataset": {
+        "cloudy": {
+          "MapillaryVistas": 5642,
+          "BDD100k": 10105,
+          "IDD-AW": 2560,
+          "BDD10k": 1163,
+          "OUTSIDE15k": 3098,
+          "ACDC": 490
+        },
+        "dawn_dusk": {
+          "MapillaryVistas": 3522,
+          "BDD100k": 10418,
+          "IDD-AW": 2738,
+          "BDD10k": 1239,
+          "ACDC": 523
+        }
+      },
+      "manifest_location": "/scratch/aaa_exchange/AWARE/GENERATED_IMAGES/NST/manifest.csv"
+    },
+    "Qwen-Image-Edit": {
+      "name": "Qwen-Image-Edit",
+      "path": "/scratch/aaa_exchange/AWARE/GENERATED_IMAGES/Qwen-Image-Edit",
+      "actual_image_count": 9404,
+      "manifest_exists": true,
+      "manifest_entries": 9324,
+      "count_match": false,
+      "by_domain": {
+        "cloudy": 770,
+        "dawn_dusk": 770,
+        "foggy": 5478,
+        "night": 769,
+        "rainy": 769,
+        "snowy": 768
+      },
+      "by_dataset": {
+        "ACDC": 4358,
+        "BDD10k": 2370,
+        "IDD-AW": 333,
+        "MapillaryVistas": 2263
+      },
+      "by_domain_dataset": {
+        "cloudy": {
+          "ACDC": 727,
+          "IDD-AW": 21,
+          "MapillaryVistas": 22
+        },
+        "dawn_dusk": {
+          "ACDC": 726,
+          "IDD-AW": 22,
+          "MapillaryVistas": 22
+        },
+        "foggy": {
+          "ACDC": 727,
+          "BDD10k": 2370,
+          "IDD-AW": 226,
+          "MapillaryVistas": 2155
+        },
+        "night": {
+          "ACDC": 726,
+          "IDD-AW": 21,
+          "MapillaryVistas": 22
+        },
+        "rainy": {
+          "ACDC": 726,
+          "IDD-AW": 22,
+          "MapillaryVistas": 21
+        },
+        "snowy": {
+          "ACDC": 726,
+          "IDD-AW": 21,
+          "MapillaryVistas": 21
+        }
+      },
+      "manifest_location": "/scratch/aaa_exchange/AWARE/GENERATED_IMAGES/Qwen-Image-Edit/manifest.csv"
+    },
+    "SUSTechGAN": {
+      "name": "SUSTechGAN",
+      "path": "/scratch/aaa_exchange/AWARE/GENERATED_IMAGES/SUSTechGAN",
+      "actual_image_count": 127700,
+      "manifest_exists": true,
+      "manifest_entries": 127700,
+      "count_match": true,
+      "by_domain": {
+        "cloudy": 31900,
+        "dawn_dusk": 31900,
+        "foggy": 31900,
+        "night": 50,
+        "rainy": 31900,
+        "snowy": 50
+      },
+      "by_dataset": {
+        "ACDC": 2904,
+        "BDD100k": 55996,
+        "BDD10k": 6812,
+        "IDD-AW": 15388,
+        "MapillaryVistas": 30108,
+        "OUTSIDE15k": 16492
+      },
+      "by_domain_dataset": {
+        "cloudy": {
+          "ACDC": 701,
+          "BDD100k": 13999,
+          "BDD10k": 1703,
+          "IDD-AW": 3847,
+          "MapillaryVistas": 7527,
+          "OUTSIDE15k": 4123
+        },
+        "dawn_dusk": {
+          "ACDC": 701,
+          "BDD100k": 13999,
+          "BDD10k": 1703,
+          "IDD-AW": 3847,
+          "MapillaryVistas": 7527,
+          "OUTSIDE15k": 4123
+        },
+        "foggy": {
+          "ACDC": 701,
+          "BDD100k": 13999,
+          "BDD10k": 1703,
+          "IDD-AW": 3847,
+          "MapillaryVistas": 7527,
+          "OUTSIDE15k": 4123
+        },
+        "night": {
+          "ACDC": 50
+        },
+        "rainy": {
+          "ACDC": 701,
+          "BDD100k": 13999,
+          "BDD10k": 1703,
+          "IDD-AW": 3847,
+          "MapillaryVistas": 7527,
+          "OUTSIDE15k": 4123
+        },
+        "snowy": {
+          "ACDC": 50
+        }
+      },
+      "manifest_location": "/scratch/aaa_exchange/AWARE/GENERATED_IMAGES/SUSTechGAN/manifest.csv"
+    },
+    "StyleID": {
+      "name": "StyleID",
+      "path": "/scratch/aaa_exchange/AWARE/GENERATED_IMAGES/StyleID",
+      "actual_image_count": 15533,
+      "manifest_exists": true,
+      "manifest_entries": 15533,
+      "count_match": true,
+      "by_domain": {
+        "cloudy": 2589,
+        "dawn_dusk": 2588,
+        "foggy": 2589,
+        "night": 2589,
+        "rainy": 2589,
+        "snowy": 2589
+      },
+      "by_dataset": {
+        "ACDC": 4206,
+        "BDD100k": 11327
+      },
+      "by_domain_dataset": {
+        "cloudy": {
+          "ACDC": 701,
+          "BDD100k": 1888
+        },
+        "dawn_dusk": {
+          "ACDC": 701,
+          "BDD100k": 1887
+        },
+        "foggy": {
+          "ACDC": 701,
+          "BDD100k": 1888
+        },
+        "night": {
+          "ACDC": 701,
+          "BDD100k": 1888
+        },
+        "rainy": {
+          "ACDC": 701,
+          "BDD100k": 1888
+        },
+        "snowy": {
+          "ACDC": 701,
+          "BDD100k": 1888
+        }
+      },
+      "manifest_location": "/scratch/aaa_exchange/AWARE/GENERATED_IMAGES/StyleID/manifest.csv"
+    },
+    "TSIT": {
+      "name": "TSIT",
+      "path": "/scratch/aaa_exchange/AWARE/GENERATED_IMAGES/TSIT",
+      "actual_image_count": 191400,
+      "manifest_exists": true,
+      "manifest_entries": 191400,
+      "count_match": true,
+      "by_domain": {
+        "cloudy": 31900,
+        "dawn_dusk": 31900,
+        "foggy": 31900,
+        "night": 31900,
+        "rainy": 31900,
+        "snowy": 31900
+      },
+      "by_dataset": {
+        "ACDC": 4206,
+        "BDD100k": 83994,
+        "BDD10k": 10218,
+        "IDD-AW": 23082,
+        "MapillaryVistas": 45162,
+        "OUTSIDE15k": 24738
+      },
+      "by_domain_dataset": {
+        "cloudy": {
+          "ACDC": 701,
+          "BDD100k": 13999,
+          "BDD10k": 1703,
+          "IDD-AW": 3847,
+          "MapillaryVistas": 7527,
+          "OUTSIDE15k": 4123
+        },
+        "dawn_dusk": {
+          "ACDC": 701,
+          "BDD100k": 13999,
+          "BDD10k": 1703,
+          "IDD-AW": 3847,
+          "MapillaryVistas": 7527,
+          "OUTSIDE15k": 4123
+        },
+        "foggy": {
+          "ACDC": 701,
+          "BDD100k": 13999,
+          "BDD10k": 1703,
+          "IDD-AW": 3847,
+          "MapillaryVistas": 7527,
+          "OUTSIDE15k": 4123
+        },
+        "night": {
+          "ACDC": 701,
+          "BDD100k": 13999,
+          "BDD10k": 1703,
+          "IDD-AW": 3847,
+          "MapillaryVistas": 7527,
+          "OUTSIDE15k": 4123
+        },
+        "rainy": {
+          "ACDC": 701,
+          "BDD100k": 13999,
+          "BDD10k": 1703,
+          "IDD-AW": 3847,
+          "MapillaryVistas": 7527,
+          "OUTSIDE15k": 4123
+        },
+        "snowy": {
+          "ACDC": 701,
+          "BDD100k": 13999,
+          "BDD10k": 1703,
+          "IDD-AW": 3847,
+          "MapillaryVistas": 7527,
+          "OUTSIDE15k": 4123
+        }
+      },
+      "manifest_location": "/scratch/aaa_exchange/AWARE/GENERATED_IMAGES/TSIT/manifest.csv"
+    },
+    "UniControl": {
+      "name": "UniControl",
+      "path": "/scratch/aaa_exchange/AWARE/GENERATED_IMAGES/UniControl",
+      "actual_image_count": 187398,
+      "manifest_exists": true,
+      "manifest_entries": 187398,
+      "count_match": true,
+      "by_domain": {
+        "cloudy": 31233,
+        "dawn_dusk": 31233,
+        "foggy": 31233,
+        "night": 31233,
+        "rainy": 31233,
+        "snowy": 31233
+      },
+      "by_dataset": {
+        "MapillaryVistas": 45162,
+        "BDD100k": 79992,
+        "IDD-AW": 23082,
+        "BDD10k": 10218,
+        "OUTSIDE15k": 24738,
+        "ACDC": 4206
+      },
+      "by_domain_dataset": {
+        "cloudy": {
+          "MapillaryVistas": 7527,
+          "BDD100k": 13332,
+          "IDD-AW": 3847,
+          "BDD10k": 1703,
+          "OUTSIDE15k": 4123,
+          "ACDC": 701
+        },
+        "dawn_dusk": {
+          "MapillaryVistas": 7527,
+          "BDD100k": 13332,
+          "IDD-AW": 3847,
+          "BDD10k": 1703,
+          "OUTSIDE15k": 4123,
+          "ACDC": 701
+        },
+        "foggy": {
+          "MapillaryVistas": 7527,
+          "BDD100k": 13332,
+          "IDD-AW": 3847,
+          "BDD10k": 1703,
+          "OUTSIDE15k": 4123,
+          "ACDC": 701
+        },
+        "night": {
+          "MapillaryVistas": 7527,
+          "BDD100k": 13332,
+          "IDD-AW": 3847,
+          "BDD10k": 1703,
+          "OUTSIDE15k": 4123,
+          "ACDC": 701
+        },
+        "rainy": {
+          "MapillaryVistas": 7527,
+          "BDD100k": 13332,
+          "IDD-AW": 3847,
+          "BDD10k": 1703,
+          "OUTSIDE15k": 4123,
+          "ACDC": 701
+        },
+        "snowy": {
+          "MapillaryVistas": 7527,
+          "BDD100k": 13332,
+          "IDD-AW": 3847,
+          "BDD10k": 1703,
+          "OUTSIDE15k": 4123,
+          "ACDC": 701
+        }
+      },
+      "manifest_location": "/scratch/aaa_exchange/AWARE/GENERATED_IMAGES/UniControl/manifest.csv"
+    },
+    "VisualCloze": {
+      "name": "VisualCloze",
+      "path": "/scratch/aaa_exchange/AWARE/GENERATED_IMAGES/VisualCloze",
+      "actual_image_count": 33707,
+      "manifest_exists": true,
+      "manifest_entries": 14151,
+      "count_match": false,
+      "by_domain": {
+        "cloudy": 2358,
+        "dawn_dusk": 2358,
+        "foggy": 2359,
+        "night": 2358,
+        "rainy": 2359,
+        "snowy": 2359
+      },
+      "by_dataset": {
+        "ACDC": 4206,
+        "IDD-AW": 9945
+      },
+      "by_domain_dataset": {
+        "cloudy": {
+          "ACDC": 701,
+          "IDD-AW": 1657
+        },
+        "dawn_dusk": {
+          "ACDC": 701,
+          "IDD-AW": 1657
+        },
+        "foggy": {
+          "ACDC": 701,
+          "IDD-AW": 1658
+        },
+        "night": {
+          "ACDC": 701,
+          "IDD-AW": 1657
+        },
+        "rainy": {
+          "ACDC": 701,
+          "IDD-AW": 1658
+        },
+        "snowy": {
+          "ACDC": 701,
+          "IDD-AW": 1658
+        }
+      },
+      "manifest_location": "/home/mima2416/repositories/PRISM/manifests/VisualCloze/manifest.csv"
+    },
+    "Weather_Effect_Generator": {
+      "name": "Weather_Effect_Generator",
+      "path": "/scratch/aaa_exchange/AWARE/GENERATED_IMAGES/Weather_Effect_Generator",
+      "actual_image_count": 82179,
+      "manifest_exists": true,
+      "manifest_entries": 82179,
+      "count_match": true,
+      "by_domain": {
+        "foggy": 31900,
+        "rainy": 18379,
+        "snowy": 31900
+      },
+      "by_dataset": {
+        "ACDC": 2103,
+        "BDD100k": 39996,
+        "BDD10k": 7110,
+        "IDD-AW": 9670,
+        "MapillaryVistas": 15054,
+        "OUTSIDE15k": 8246
+      },
+      "by_domain_dataset": {
+        "foggy": {
+          "ACDC": 701,
+          "BDD100k": 13332,
+          "BDD10k": 2370,
+          "IDD-AW": 3847,
+          "MapillaryVistas": 7527,
+          "OUTSIDE15k": 4123
+        },
+        "rainy": {
+          "ACDC": 701,
+          "BDD100k": 13332,
+          "BDD10k": 2370,
+          "IDD-AW": 1976
+        },
+        "snowy": {
+          "ACDC": 701,
+          "BDD100k": 13332,
+          "BDD10k": 2370,
+          "IDD-AW": 3847,
+          "MapillaryVistas": 7527,
+          "OUTSIDE15k": 4123
+        }
+      },
+      "manifest_location": "/scratch/aaa_exchange/AWARE/GENERATED_IMAGES/Weather_Effect_Generator/manifest.csv"
+    },
+    "albumentations_weather": {
+      "name": "albumentations_weather",
+      "path": "/scratch/aaa_exchange/AWARE/GENERATED_IMAGES/albumentations_weather",
+      "actual_image_count": 95700,
+      "manifest_exists": true,
+      "manifest_entries": 95700,
+      "count_match": true,
+      "by_domain": {
+        "foggy": 31900,
+        "rain": 31900,
+        "snow": 31900
+      },
+      "by_dataset": {
+        "ACDC": 2103,
+        "BDD100k": 39996,
+        "BDD10k": 7110,
+        "IDD-AW": 11541,
+        "MapillaryVistas": 22581,
+        "OUTSIDE15k": 12369
+      },
+      "by_domain_dataset": {
+        "foggy": {
+          "ACDC": 701,
+          "BDD100k": 13332,
+          "BDD10k": 2370,
+          "IDD-AW": 3847,
+          "MapillaryVistas": 7527,
+          "OUTSIDE15k": 4123
+        },
+        "rain": {
+          "ACDC": 701,
+          "BDD100k": 13332,
+          "BDD10k": 2370,
+          "IDD-AW": 3847,
+          "MapillaryVistas": 7527,
+          "OUTSIDE15k": 4123
+        },
+        "snow": {
+          "ACDC": 701,
+          "BDD100k": 13332,
+          "BDD10k": 2370,
+          "IDD-AW": 3847,
+          "MapillaryVistas": 7527,
+          "OUTSIDE15k": 4123
+        }
+      },
+      "manifest_location": "/scratch/aaa_exchange/AWARE/GENERATED_IMAGES/albumentations_weather/manifest.csv"
+    },
+    "augmenters": {
+      "name": "augmenters",
+      "path": "/scratch/aaa_exchange/AWARE/GENERATED_IMAGES/augmenters",
+      "actual_image_count": 159500,
+      "manifest_exists": true,
+      "manifest_entries": 159500,
+      "count_match": true,
+      "by_domain": {
+        "unknown": 159500
+      },
+      "by_dataset": {
+        "ACDC": 3505,
+        "BDD100k": 66660,
+        "BDD10k": 11850,
+        "IDD-AW": 19235,
+        "MapillaryVistas": 37635,
+        "OUTSIDE15k": 20615
+      },
+      "by_domain_dataset": {
+        "unknown": {
+          "ACDC": 3505,
+          "BDD100k": 66660,
+          "BDD10k": 11850,
+          "IDD-AW": 19235,
+          "MapillaryVistas": 37635,
+          "OUTSIDE15k": 20615
+        }
+      },
+      "manifest_location": "/scratch/aaa_exchange/AWARE/GENERATED_IMAGES/augmenters/manifest.csv"
+    },
+    "automold": {
+      "name": "automold",
+      "path": "/scratch/aaa_exchange/AWARE/GENERATED_IMAGES/automold",
+      "actual_image_count": 95700,
+      "manifest_exists": true,
+      "manifest_entries": 95700,
+      "count_match": true,
+      "by_domain": {
+        "foggy": 31900,
+        "rainy": 31900,
+        "snowy": 31900
+      },
+      "by_dataset": {
+        "ACDC": 2103,
+        "BDD100k": 39996,
+        "BDD10k": 7110,
+        "IDD-AW": 11541,
+        "MapillaryVistas": 22581,
+        "OUTSIDE15k": 12369
+      },
+      "by_domain_dataset": {
+        "foggy": {
+          "ACDC": 701,
+          "BDD100k": 13332,
+          "BDD10k": 2370,
+          "IDD-AW": 3847,
+          "MapillaryVistas": 7527,
+          "OUTSIDE15k": 4123
+        },
+        "rainy": {
+          "ACDC": 701,
+          "BDD100k": 13332,
+          "BDD10k": 2370,
+          "IDD-AW": 3847,
+          "MapillaryVistas": 7527,
+          "OUTSIDE15k": 4123
+        },
+        "snowy": {
+          "ACDC": 701,
+          "BDD100k": 13332,
+          "BDD10k": 2370,
+          "IDD-AW": 3847,
+          "MapillaryVistas": 7527,
+          "OUTSIDE15k": 4123
+        }
+      },
+      "manifest_location": "/scratch/aaa_exchange/AWARE/GENERATED_IMAGES/automold/manifest.csv"
+    },
+    "cycleGAN": {
+      "name": "cycleGAN",
+      "path": "/scratch/aaa_exchange/AWARE/GENERATED_IMAGES/cycleGAN",
+      "actual_image_count": 187398,
+      "manifest_exists": true,
+      "manifest_entries": 187398,
+      "count_match": true,
+      "by_domain": {
+        "cloudy": 31233,
+        "dawn_dusk": 31233,
+        "fog": 31233,
+        "night": 31233,
+        "rainy": 31233,
+        "snowy": 31233
+      },
+      "by_dataset": {
+        "MapillaryVistas": 45162,
+        "BDD100k": 79992,
+        "IDD-AW": 23082,
+        "BDD10k": 10218,
+        "OUTSIDE15k": 24738,
+        "ACDC": 4206
+      },
+      "by_domain_dataset": {
+        "cloudy": {
+          "MapillaryVistas": 7527,
+          "BDD100k": 13332,
+          "IDD-AW": 3847,
+          "BDD10k": 1703,
+          "OUTSIDE15k": 4123,
+          "ACDC": 701
+        },
+        "dawn_dusk": {
+          "MapillaryVistas": 7527,
+          "BDD100k": 13332,
+          "IDD-AW": 3847,
+          "BDD10k": 1703,
+          "OUTSIDE15k": 4123,
+          "ACDC": 701
+        },
+        "fog": {
+          "MapillaryVistas": 7527,
+          "BDD100k": 13332,
+          "IDD-AW": 3847,
+          "BDD10k": 1703,
+          "OUTSIDE15k": 4123,
+          "ACDC": 701
+        },
+        "night": {
+          "MapillaryVistas": 7527,
+          "BDD100k": 13332,
+          "IDD-AW": 3847,
+          "BDD10k": 1703,
+          "OUTSIDE15k": 4123,
+          "ACDC": 701
+        },
+        "rainy": {
+          "MapillaryVistas": 7527,
+          "BDD100k": 13332,
+          "IDD-AW": 3847,
+          "BDD10k": 1703,
+          "OUTSIDE15k": 4123,
+          "ACDC": 701
+        },
+        "snowy": {
+          "MapillaryVistas": 7527,
+          "BDD100k": 13332,
+          "IDD-AW": 3847,
+          "BDD10k": 1703,
+          "OUTSIDE15k": 4123,
+          "ACDC": 701
+        }
+      },
+      "manifest_location": "/scratch/aaa_exchange/AWARE/GENERATED_IMAGES/cycleGAN/manifest.csv"
+    },
+    "cyclediffusion": {
+      "name": "cyclediffusion",
+      "path": "/scratch/aaa_exchange/AWARE/GENERATED_IMAGES/cyclediffusion",
+      "actual_image_count": 110883,
+      "manifest_exists": true,
+      "manifest_entries": 110883,
+      "count_match": true,
+      "by_domain": {
+        "cloudy": 18480,
+        "dawn_dusk": 18480,
+        "foggy": 18481,
+        "night": 18480,
+        "rainy": 18481,
+        "snowy": 18481
+      },
+      "by_dataset": {
+        "ACDC": 4206,
+        "BDD100k": 79992,
+        "BDD10k": 14220,
+        "IDD-AW": 12465
+      },
+      "by_domain_dataset": {
+        "cloudy": {
+          "ACDC": 701,
+          "BDD100k": 13332,
+          "BDD10k": 2370,
+          "IDD-AW": 2077
+        },
+        "dawn_dusk": {
+          "ACDC": 701,
+          "BDD100k": 13332,
+          "BDD10k": 2370,
+          "IDD-AW": 2077
+        },
+        "foggy": {
+          "ACDC": 701,
+          "BDD100k": 13332,
+          "BDD10k": 2370,
+          "IDD-AW": 2078
+        },
+        "night": {
+          "ACDC": 701,
+          "BDD100k": 13332,
+          "BDD10k": 2370,
+          "IDD-AW": 2077
+        },
+        "rainy": {
+          "ACDC": 701,
+          "BDD100k": 13332,
+          "BDD10k": 2370,
+          "IDD-AW": 2078
+        },
+        "snowy": {
+          "ACDC": 701,
+          "BDD100k": 13332,
+          "BDD10k": 2370,
+          "IDD-AW": 2078
+        }
+      },
+      "manifest_location": "/scratch/aaa_exchange/AWARE/GENERATED_IMAGES/cyclediffusion/manifest.csv"
+    },
+    "flux2": {
+      "name": "flux2",
+      "path": "/scratch/aaa_exchange/AWARE/GENERATED_IMAGES/flux2",
+      "actual_image_count": 10851,
+      "manifest_exists": true,
+      "manifest_entries": 4206,
+      "count_match": false,
+      "by_domain": {
+        "cloudy": 701,
+        "dawn_dusk": 701,
+        "foggy": 701,
+        "night": 701,
+        "rainy": 701,
+        "snowy": 701
+      },
+      "by_dataset": {
+        "ACDC": 4206
+      },
+      "by_domain_dataset": {
+        "cloudy": {
+          "ACDC": 701
+        },
+        "dawn_dusk": {
+          "ACDC": 701
+        },
+        "foggy": {
+          "ACDC": 701
+        },
+        "night": {
+          "ACDC": 701
+        },
+        "rainy": {
+          "ACDC": 701
+        },
+        "snowy": {
+          "ACDC": 701
+        }
+      },
+      "manifest_location": "/home/mima2416/repositories/PRISM/manifests/flux2/manifest.csv"
+    },
+    "flux_kontext": {
+      "name": "flux_kontext",
+      "path": "/scratch/aaa_exchange/AWARE/GENERATED_IMAGES/flux_kontext",
+      "actual_image_count": 69900,
+      "manifest_exists": true,
+      "manifest_entries": 69900,
+      "count_match": true,
+      "by_domain": {
+        "cloudy": 11650,
+        "dawn_dusk": 11650,
+        "foggy": 11650,
+        "night": 11650,
+        "rainy": 11650,
+        "snowy": 11650
+      },
+      "by_dataset": {
+        "MapillaryVistas": 45162,
+        "OUTSIDE15k": 24738
+      },
+      "by_domain_dataset": {
+        "cloudy": {
+          "MapillaryVistas": 7527,
+          "OUTSIDE15k": 4123
+        },
+        "dawn_dusk": {
+          "MapillaryVistas": 7527,
+          "OUTSIDE15k": 4123
+        },
+        "foggy": {
+          "MapillaryVistas": 7527,
+          "OUTSIDE15k": 4123
+        },
+        "night": {
+          "MapillaryVistas": 7527,
+          "OUTSIDE15k": 4123
+        },
+        "rainy": {
+          "MapillaryVistas": 7527,
+          "OUTSIDE15k": 4123
+        },
+        "snowy": {
+          "MapillaryVistas": 7527,
+          "OUTSIDE15k": 4123
+        }
+      },
+      "manifest_location": "/scratch/aaa_exchange/AWARE/GENERATED_IMAGES/flux_kontext/manifest.csv"
+    },
+    "stargan_v2": {
+      "name": "stargan_v2",
+      "path": "/scratch/aaa_exchange/AWARE/GENERATED_IMAGES/stargan_v2",
+      "actual_image_count": 187398,
+      "manifest_exists": true,
+      "manifest_entries": 187398,
+      "count_match": true,
+      "by_domain": {
+        "cloudy": 31233,
+        "dawn_dusk": 31233,
+        "fog": 31233,
+        "night": 31233,
+        "rainy": 31233,
+        "snowy": 31233
+      },
+      "by_dataset": {
+        "MapillaryVistas": 45162,
+        "BDD100k": 79992,
+        "IDD-AW": 23082,
+        "BDD10k": 10218,
+        "OUTSIDE15k": 24738,
+        "ACDC": 4206
+      },
+      "by_domain_dataset": {
+        "cloudy": {
+          "MapillaryVistas": 7527,
+          "BDD100k": 13332,
+          "IDD-AW": 3847,
+          "BDD10k": 1703,
+          "OUTSIDE15k": 4123,
+          "ACDC": 701
+        },
+        "dawn_dusk": {
+          "MapillaryVistas": 7527,
+          "BDD100k": 13332,
+          "IDD-AW": 3847,
+          "BDD10k": 1703,
+          "OUTSIDE15k": 4123,
+          "ACDC": 701
+        },
+        "fog": {
+          "MapillaryVistas": 7527,
+          "BDD100k": 13332,
+          "IDD-AW": 3847,
+          "BDD10k": 1703,
+          "OUTSIDE15k": 4123,
+          "ACDC": 701
+        },
+        "night": {
+          "MapillaryVistas": 7527,
+          "BDD100k": 13332,
+          "IDD-AW": 3847,
+          "BDD10k": 1703,
+          "OUTSIDE15k": 4123,
+          "ACDC": 701
+        },
+        "rainy": {
+          "MapillaryVistas": 7527,
+          "BDD100k": 13332,
+          "IDD-AW": 3847,
+          "BDD10k": 1703,
+          "OUTSIDE15k": 4123,
+          "ACDC": 701
+        },
+        "snowy": {
+          "MapillaryVistas": 7527,
+          "BDD100k": 13332,
+          "IDD-AW": 3847,
+          "BDD10k": 1703,
+          "OUTSIDE15k": 4123,
+          "ACDC": 701
+        }
+      },
+      "manifest_location": "/scratch/aaa_exchange/AWARE/GENERATED_IMAGES/stargan_v2/manifest.csv"
+    },
+    "step1x_new": {
+      "name": "step1x_new",
+      "path": "/scratch/aaa_exchange/AWARE/GENERATED_IMAGES/step1x_new",
+      "actual_image_count": 77343,
+      "manifest_exists": true,
+      "manifest_entries": 77343,
+      "count_match": true,
+      "by_domain": {
+        "cloudy": 12889,
+        "dawn_dusk": 12890,
+        "foggy": 12892,
+        "night": 12890,
+        "rainy": 12891,
+        "snowy": 12891
+      },
+      "by_dataset": {
+        "ACDC": 4206,
+        "BDD100k": 10325,
+        "IDD-AW": 20952,
+        "MapillaryVistas": 20959,
+        "OUTSIDE15k": 20901
+      },
+      "by_domain_dataset": {
+        "cloudy": {
+          "ACDC": 701,
+          "BDD100k": 1720,
+          "IDD-AW": 3492,
+          "MapillaryVistas": 3493,
+          "OUTSIDE15k": 3483
+        },
+        "dawn_dusk": {
+          "ACDC": 701,
+          "BDD100k": 1721,
+          "IDD-AW": 3492,
+          "MapillaryVistas": 3493,
+          "OUTSIDE15k": 3483
+        },
+        "foggy": {
+          "ACDC": 701,
+          "BDD100k": 1721,
+          "IDD-AW": 3492,
+          "MapillaryVistas": 3494,
+          "OUTSIDE15k": 3484
+        },
+        "night": {
+          "ACDC": 701,
+          "BDD100k": 1721,
+          "IDD-AW": 3492,
+          "MapillaryVistas": 3493,
+          "OUTSIDE15k": 3483
+        },
+        "rainy": {
+          "ACDC": 701,
+          "BDD100k": 1721,
+          "IDD-AW": 3492,
+          "MapillaryVistas": 3493,
+          "OUTSIDE15k": 3484
+        },
+        "snowy": {
+          "ACDC": 701,
+          "BDD100k": 1721,
+          "IDD-AW": 3492,
+          "MapillaryVistas": 3493,
+          "OUTSIDE15k": 3484
+        }
+      },
+      "manifest_location": "/scratch/aaa_exchange/AWARE/GENERATED_IMAGES/step1x_new/manifest.csv"
+    },
+    "step1x_v1p2": {
+      "name": "step1x_v1p2",
+      "path": "/scratch/aaa_exchange/AWARE/GENERATED_IMAGES/step1x_v1p2",
+      "actual_image_count": 67761,
+      "manifest_exists": true,
+      "manifest_entries": 67761,
+      "count_match": true,
+      "by_domain": {
+        "cloudy": 11292,
+        "dawn_dusk": 11293,
+        "foggy": 11295,
+        "night": 11292,
+        "rainy": 11294,
+        "snowy": 11295
+      },
+      "by_dataset": {
+        "MapillaryVistas": 26727,
+        "OUTSIDE15k": 24562,
+        "ACDC": 4194,
+        "BDD100k": 12278
+      },
+      "by_domain_dataset": {
+        "cloudy": {
+          "MapillaryVistas": 4454,
+          "OUTSIDE15k": 4093,
+          "ACDC": 699,
+          "BDD100k": 2046
+        },
+        "dawn_dusk": {
+          "MapillaryVistas": 4454,
+          "OUTSIDE15k": 4094,
+          "ACDC": 699,
+          "BDD100k": 2046
+        },
+        "foggy": {
+          "MapillaryVistas": 4455,
+          "OUTSIDE15k": 4094,
+          "ACDC": 699,
+          "BDD100k": 2047
+        },
+        "night": {
+          "MapillaryVistas": 4454,
+          "OUTSIDE15k": 4093,
+          "ACDC": 699,
+          "BDD100k": 2046
+        },
+        "rainy": {
+          "MapillaryVistas": 4455,
+          "OUTSIDE15k": 4094,
+          "ACDC": 699,
+          "BDD100k": 2046
+        },
+        "snowy": {
+          "MapillaryVistas": 4455,
+          "OUTSIDE15k": 4094,
+          "ACDC": 699,
+          "BDD100k": 2047
+        }
+      },
+      "manifest_location": "/scratch/aaa_exchange/AWARE/GENERATED_IMAGES/step1x_v1p2/manifest.csv"
+    }
+  },
+  "aggregate": {
+    "total_images": 2984281,
+    "total_manifest_entries": 2957723,
+    "by_domain": {
+      "defogged": 270,
+      "cloudy": 441375,
+      "dawn_dusk": 436732,
+      "foggy": 424398,
+      "night": 386428,
+      "rainy": 468718,
+      "snowy": 450236,
+      "fog": 94366,
+      "clear_day": 31900,
+      "rain": 31900,
+      "snow": 31900,
+      "unknown": 159500
+    },
+    "by_dataset": {
+      "ACDC": 90376,
+      "IDD-AW": 351209,
+      "BDD100k": 1258993,
+      "BDD10k": 170871,
+      "MapillaryVistas": 691381,
+      "OUTSIDE15k": 394893
+    },
+    "models_with_manifest": 26,
+    "models_with_mismatch": 4
+  }
+}
