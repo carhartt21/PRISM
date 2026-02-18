@@ -333,14 +333,20 @@ def discover_domains_from_manifest(manifest_path: Path) -> List[str]:
         reader = csv.DictReader(f)
         fieldnames = reader.fieldnames or []
         
-        # Prefer 'target_domain' column, fall back to 'domain'
+        # Prefer canonical domain columns so domain names in the report are
+        # normalised regardless of manifest format.  Order of preference:
+        #   1. 'domain_canonical'  – new-format manifests (generate_manifest.py)
+        #   2. 'domain'            – scratch manifests (already canonical)
+        #   3. 'target_domain'     – legacy manifests (may contain raw folder names)
         domain_column = None
-        if 'target_domain' in fieldnames:
-            domain_column = 'target_domain'
+        if 'domain_canonical' in fieldnames:
+            domain_column = 'domain_canonical'
         elif 'domain' in fieldnames:
             domain_column = 'domain'
+        elif 'target_domain' in fieldnames:
+            domain_column = 'target_domain'
         else:
-            logging.warning("Manifest %s has no 'target_domain' or 'domain' column", manifest_path)
+            logging.warning("Manifest %s has no 'domain_canonical', 'domain', or 'target_domain' column", manifest_path)
             return []
         
         for row in reader:
